@@ -1,9 +1,12 @@
 import {parseCSV} from './csv.js';
 import {chart} from './chart.js';
-const $=s=>document.querySelector(s),state={user:null,records:[],strategies:[],editing:null,requestId:crypto.randomUUID(),importRows:[],importId:crypto.randomUUID(),csv:null};
+import {normalizeAnalysisRule,describeAnalysisRule,selectAnalysisSamples} from './analysis-scope.js';
+const $=s=>document.querySelector(s),state={user:null,records:[],strategies:[],summary:[],editing:null,ruleStrategy:null,requestId:crypto.randomUUID(),importRows:[],importId:crypto.randomUUID(),csv:null};
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const fmt=n=>n===null||n===undefined?'—':Number(n).toFixed(2),pct=n=>n===null||n===undefined?'—':`${n>0?'+':''}${fmt(n)}%`,today=()=>new Date(Date.now()+8*3600000).toISOString().slice(0,10);
 const num=n=>n===null||n===undefined?'':String(n);
+// Do not open record/strategy forms before their server-backed options are loaded.
+for(const id of ['add','empty-add','import','new-strategy'])$('#'+id).disabled=true;
 let messageTimer;
 function message(text){$('#message').textContent=text;$('#message').hidden=false;clearTimeout(messageTimer);messageTimer=setTimeout(()=>$('#message').hidden=true,9000);}
 async function api(path,options={}){
@@ -15,7 +18,7 @@ async function api(path,options={}){
 const send=(url,data,method='POST')=>api(url,{method,body:JSON.stringify(data)});
 const button=(text,fn,cls='secondary')=>{const b=el('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve(fn()).catch(e=>message(e.message)));return b;};
 function strategyOptions(select,empty=false){const current=select.value;select.replaceChildren();if(empty)select.append(new Option('全部策略',''));for(const s of state.strategies.filter(s=>!s.archived||empty))select.append(new Option(s.name+(s.archived?'（已归档）':''),s.id));if(current)select.value=current;}
-async function load(){const [r,s]=await Promise.all([api('/api/records'),api('/api/strategies')]);state.records=r.records;state.strategies=s;strategyOptions($('#filter-strategy'),true);strategyOptions($('#import-strategy'));render();renderStrategies();}
+async function load(){const [r,s,summary]=await Promise.all([api('/api/records'),api('/api/strategies'),api('/api/summary')]);state.records=r.records;state.strategies=s;state.summary=summary;strategyOptions($('#filter-strategy'),true);strategyOptions($('#import-strategy'));render();renderStrategies();for(const id of ['add','empty-add','import','new-strategy'])$('#'+id).disabled=false;}
 function filtered(){const strategy=$('#filter-strategy').value,q=$('#filter-search').value.toLowerCase(),start=$('#filter-start').value,end=$('#filter-end').value,status=$('#filter-status').value;return state.records.filter(r=>(!strategy||r.strategy_id===strategy)&&(!q||[r.symbol,r.name,r.tags,r.notes,r.batch_id,r.version].join(' ').toLowerCase().includes(q))&&(!start||r.buy_time.slice(0,10)>=start)&&(!end||r.buy_time.slice(0,10)<=end)&&(!status||r.tracking.status===status));}
 function render(){
   const rows=filtered(),stats=$('#stats');stats.replaceChildren();
@@ -74,15 +77,30 @@ async function refreshRecords(rows,automatic=false){
   }catch(e){message('刷新失败，已保存记录保持不变：'+e.message);}finally{b.disabled=false;}
 }
 $('#refresh').onclick=()=>refreshRecords(filtered());
-function statsFor(rows,n){const vals=rows.map(r=>r.tracking.window[n].value).filter(v=>v!==null);return {count:vals.length,mean:vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null,positive:vals.length?vals.filter(v=>v>0).length/vals.length*100:null};}
 function renderStrategies(){
   const wrap=$('#strategy-summary');wrap.replaceChildren(el('h2','D0 至 D+10 样本表现'));const table=el('table'),head=el('tr');['策略 / 样本数',...Array.from({length:11},(_,n)=>n?'D+'+n:'D0')].forEach(s=>head.append(el('th',s)));table.append(head);
-  for(const group of [{id:'',name:'全部策略'},...state.strategies]){
-    const rows=state.records.filter(r=>!group.id||r.strategy_id===group.id),tr=el('tr');tr.append(el('td',`${group.name} · ${rows.length}样本 / ${new Set(rows.map(r=>r.symbol)).size}只股票`));
-    for(let n=0;n<11;n++){const d=statsFor(rows,n),td=el('td',pct(d.mean));td.append(el('small',`正收益 ${d.positive===null?'—':fmt(d.positive)+'%'} · n=${d.count}`));tr.append(td);}table.append(tr);
+  for(const group of state.summary){
+    const tr=el('tr'),label=el('td',group.name);label.append(el('small',`原始 ${group.total_samples} · 入选 ${group.samples} · 排除 ${group.excluded_samples} · ${group.unique_stocks}只股票`));label.append(el('small',group.strategy_id==='analysis-all'?'分别应用各策略规则，再合并入选样本':group.rule_description));
+    if(!['all','analysis-all'].includes(group.strategy_id))label.append(button('查看入选范围',()=>showAnalysisMembers(group.strategy_id)));tr.append(label);
+    for(let n=0;n<11;n++){const d=group.points[n],td=el('td',pct(d.mean));td.append(el('small',`正收益 ${d.positive===null?'—':fmt(d.positive*100)+'%'} · n=${d.count}`));tr.append(td);}table.append(tr);
   }
   const scroll=el('div',undefined,'table-wrap');scroll.append(table);wrap.append(scroll);const management=$('#strategy-management');management.replaceChildren();
-  for(const s of state.strategies){const row=el('div',undefined,'strategy-row');row.append(el('span',s.name+(s.archived?' · 已归档':'')));if(state.user.role==='admin'){const actions=el('div',undefined,'actions');actions.append(button('重命名',async()=>{const name=prompt('策略名称',s.name);if(!name)return;await send('/api/strategies/'+s.id,{name},'PATCH');await load();}),button(s.archived?'恢复':'归档',async()=>{await send('/api/strategies/'+s.id,{archived:!s.archived},'PATCH');await load();}));row.append(actions);}management.append(row);}
+  for(const s of state.strategies){const row=el('div',undefined,'strategy-row'),label=el('div',s.name+(s.archived?' · 已归档':''));label.append(el('p',describeAnalysisRule(s.analysis_rule),'fine'));row.append(label);if(state.user.role==='admin'){const actions=el('div',undefined,'actions');actions.append(button('分析范围',()=>openAnalysisRule(s.id)),button('重命名',async()=>{const name=prompt('策略名称',s.name);if(!name)return;await send('/api/strategies/'+s.id,{name},'PATCH');await load();}),button(s.archived?'恢复':'归档',async()=>{await send('/api/strategies/'+s.id,{archived:!s.archived},'PATCH');await load();}));row.append(actions);}management.append(row);}
+}
+function openAnalysisRule(id){
+  const s=state.strategies.find(s=>s.id===id),form=$('#analysis-rule-form');state.ruleStrategy=s;const r=normalizeAnalysisRule(s.analysis_rule);form.reset();$('#analysis-rule-title').textContent=s.name+' · 分析范围';form.elements.first_enabled.checked=r.first_n!==null;form.elements.first_n.value=r.first_n??10;form.elements.before_enabled.checked=r.before_time!==null;form.elements.before_time.value=r.before_time??'13:00:00';form.querySelector('.form-error').textContent='';previewAnalysisRule();$('#analysis-editor').showModal();
+}
+function ruleFromForm(){const f=$('#analysis-rule-form');return normalizeAnalysisRule({first_n:f.elements.first_enabled.checked?Number(f.elements.first_n.value):null,before_time:f.elements.before_enabled.checked?f.elements.before_time.value:null});}
+function previewAnalysisRule(){
+  const f=$('#analysis-rule-form');f.elements.first_n.disabled=!f.elements.first_enabled.checked;f.elements.before_time.disabled=!f.elements.before_enabled.checked;
+  try{const r=ruleFromForm(),rows=state.records.filter(r=>r.strategy_id===state.ruleStrategy?.id),selected=selectAnalysisSamples(rows,r).selected;$('#analysis-rule-preview').textContent=`${describeAnalysisRule(r)}。当前已加载 ${rows.length} 条，预览入选 ${selected.length} 条、排除 ${rows.length-selected.length} 条。正式统计由服务端使用全部记录计算。`;}catch(e){$('#analysis-rule-preview').textContent=e.message;}
+}
+$('#analysis-rule-form').addEventListener('input',previewAnalysisRule);
+$('#analysis-rule-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type=submit]');b.disabled=true;f.querySelector('.form-error').textContent='';try{await send('/api/strategies/'+state.ruleStrategy.id+'/analysis-rule',{rule:ruleFromForm(),revision:state.ruleStrategy.analysis_revision},'PATCH');$('#analysis-editor').close();await load();message('分析范围已保存，策略统计已重算；原始记录全部保留。');}catch(e){f.querySelector('.form-error').textContent=e.message;}finally{b.disabled=false;}});
+$('#analysis-reset').onclick=()=>{const f=$('#analysis-rule-form');f.elements.first_enabled.checked=false;f.elements.before_enabled.checked=false;previewAnalysisRule();};
+function showAnalysisMembers(id){
+  const s=state.strategies.find(s=>s.id===id),rows=state.records.filter(r=>r.strategy_id===id),{decisions}=selectAnalysisSamples(rows,s.analysis_rule),group=state.summary.find(g=>g.strategy_id===id),content=$('#analysis-members-content');content.replaceChildren(el('h2',s.name+' · 入选明细'),el('p',describeAnalysisRule(s.analysis_rule),'notice'),el('p',`服务端总计：${group.total_samples} 条原始样本，入选 ${group.samples} 条，排除 ${group.excluded_samples} 条。下表展示当前已加载的 ${rows.length} 条。`,'fine'));
+  const selected=new Set(group.selected_ids),table=el('table'),head=el('tr');['股票','买入时间（上海）','价格状态','分析范围'].forEach(h=>head.append(el('th',h)));table.append(head);rows.slice().sort((a,b)=>a.buy_time.localeCompare(b.buy_time)||a.created_at.localeCompare(b.created_at)||a.id.localeCompare(b.id)).forEach(r=>{const tr=el('tr');[r.symbol+' '+r.name,r.buy_time.replace('T',' '),r.tracking.baseType,selected.has(r.id)?'入选':decisions.get(r.id)==='入选'?'未入选（全量排序超出名额）':decisions.get(r.id)].forEach(v=>tr.append(el('td',v)));table.append(tr);});const scroll=el('div',undefined,'table-wrap');scroll.append(table);content.append(scroll);$('#analysis-members').showModal();
 }
 $('#new-strategy').onclick=async()=>{try{const name=prompt('新策略名称');if(!name)return;await send('/api/strategies',{name});await load();}catch(e){message(e.message);}};
 for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{document.querySelectorAll('.view').forEach(s=>s.hidden=s.id!==b.dataset.view);document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===b));$('#breadcrumb').textContent='研究工作台 / '+b.textContent.trim().slice(1).trim();};

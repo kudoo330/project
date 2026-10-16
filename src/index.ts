@@ -1,8 +1,11 @@
 import { digest, identity, login, logout } from './auth';
-import { csvCell, normalizeSymbol, normalizeTime, optionalPositive, summarize, shanghaiNow } from './domain';
+import { csvCell, normalizeSymbol, normalizeTime, optionalPositive, shanghaiNow } from './domain';
 import { daily, minute } from './market';
 import { calendarInfo, track } from './tracking';
-import type { Env, Identity, RecordRow } from './types';
+import type { Env, RecordRow } from './types';
+import {listStrategies,ensureAnalysisSchema} from './strategy-analysis';
+import {analysisSummary} from './analysis-summary';
+import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
 const text=(s:unknown,max=2000)=>String(s??'').slice(0,max);
@@ -32,11 +35,22 @@ async function api(request:Request,env:Env,url:URL) {
   if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
   if(url.pathname==='/api/strategies') {
-    if(request.method==='GET')return json((await env.DB.prepare('SELECT * FROM strategies ORDER BY created_at,id').all()).results);
+    if(request.method==='GET')return json(await listStrategies(env));
     if(request.method==='POST') {
       const b=await body(request),name=text(b.name,80).trim();if(!name)throw new Error('策略名称不能为空');
       await env.DB.prepare('INSERT INTO strategies(id,name) VALUES(?,?)').bind(crypto.randomUUID(),name).run();return json({ok:true},201);
     }
+  }
+  const ruleMatch=url.pathname.match(/^\/api\/strategies\/([\w-]+)\/analysis-rule$/);
+  if(ruleMatch&&request.method==='PATCH') {
+    await ensureAnalysisSchema(env);
+    if(!await env.DB.prepare('SELECT id FROM strategies WHERE id=?').bind(ruleMatch[1]).first())return json({error:'策略不存在'},404);
+    const b=await body(request),rule=normalizeAnalysisRule(b.rule);
+    if(!Number.isInteger(b.revision)||b.revision<0)throw new Error('缺少有效的分析规则版本，请刷新后重试');
+    const saved=b.revision===0
+      ?await env.DB.prepare(`INSERT INTO strategy_analysis_rules(strategy_id,rule_json,revision,updated_by,updated_at) VALUES(?,?,1,?,?) ON CONFLICT(strategy_id) DO NOTHING RETURNING revision`).bind(ruleMatch[1],JSON.stringify(rule),user.username,now()).first<{revision:number}>()
+      :await env.DB.prepare('UPDATE strategy_analysis_rules SET rule_json=?,revision=revision+1,updated_by=?,updated_at=? WHERE strategy_id=? AND revision=? RETURNING revision').bind(JSON.stringify(rule),user.username,now(),ruleMatch[1],b.revision).first<{revision:number}>();
+    return saved?json({ok:true,rule,revision:saved.revision}):json({error:'分析规则已被修改，请刷新后重试'},409);
   }
   const strategyMatch=url.pathname.match(/^\/api\/strategies\/([\w-]+)$/);
   if(strategyMatch&&request.method==='PATCH') {
@@ -141,8 +155,7 @@ async function api(request:Request,env:Env,url:URL) {
   }
   if(url.pathname==='/api/summary'&&request.method==='GET') {
     const records=(await env.DB.prepare('SELECT * FROM records').all<RecordRow>()).results;
-    const groups=[...new Set(records.map(r=>r.strategy_id))];
-    return json([{strategy_id:'all',samples:records.length,points:Array.from({length:11},(_,n)=>summarize(records.map(r=>track(r).window[n].value)))},...groups.map(id=>{const rows=records.filter(r=>r.strategy_id===id);return {strategy_id:id,samples:rows.length,points:Array.from({length:11},(_,n)=>summarize(rows.map(r=>track(r).window[n].value)))};})]);
+    return json(analysisSummary(records,await listStrategies(env)));
   }
   return json({error:'接口不存在'},404);
 }

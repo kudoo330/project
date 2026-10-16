@@ -22,7 +22,7 @@ test('viewer may read but cannot create, edit, delete or refresh',async()=>{
   const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});
   const response=await c.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});expect(response.ok()).toBeTruthy();
   expect((await c.get('/api/records')).status()).toBe(200);
-  for(const [path,method]of [['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
+  for(const [path,method]of [['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST'],['/api/strategies/twenty-minute/analysis-rule','PATCH']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
   await c.post('/api/logout',{data:{}});expect((await c.get('/api/records')).status()).toBe(401);await c.dispose();
 });
 test('origin protection, cross-strategy samples, retries, revision and persistence',async()=>{
@@ -71,5 +71,36 @@ test('single-entry UI creates independent strategy samples; CSV preview rejects 
     await page.locator('#import').click();await page.locator('#paste').fill('BAD 09:47\n688265.SH 10:05');await page.locator('#preview-import').click();await expect(page.locator('#submit-import')).toBeDisabled();await expect(page.locator('#import-summary')).toContainText('1行有错误');await page.locator('#importer .close').click();
   }finally{
     const response=await page.request.get('/api/records');if(response.ok())for(const r of (await response.json()).records.filter(r=>r.notes===note))await page.request.delete('/api/records/'+r.id,{headers,data:{revision:r.revision}});
+  }
+});
+test('strategy scope persists independently, handles stale revisions and never removes original samples',async()=>{
+  const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});
+  const old=await(await c.get('/api/strategies')).json(),ids=['twenty-minute','898'],before=(await(await c.get('/api/records')).json()).records.length,note=prefix+crypto.randomUUID();
+  const yesterday=new Date(Date.now()+8*3600000-86400000).toISOString().slice(0,10);
+  try{
+    const rows=[['twenty-minute','09:31:00',null],['twenty-minute','09:40:00',3],['898','13:00:00',3],['898','10:00:00',3]].map(([strategy_id,time,actual_price])=>({strategy_id,buy_time:yesterday+'T'+time,symbol:'300111.SZ',actual_price,notes:note}));
+    expect((await c.post('/api/records',{data:{rows,request_id:crypto.randomUUID(),confirm_duplicates:true}})).ok()).toBeTruthy();
+    for(const id of ids){const s=old.find(s=>s.id===id),rule=id==='twenty-minute'?{first_n:1,before_time:null}:{first_n:null,before_time:'13:00'};const r=await c.patch('/api/strategies/'+id+'/analysis-rule',{data:{revision:s.analysis_revision,rule}});expect(r.ok()).toBeTruthy();}
+    const stale=await c.patch('/api/strategies/twenty-minute/analysis-rule',{data:{revision:old.find(s=>s.id==='twenty-minute').analysis_revision,rule:{}}});expect(stale.status()).toBe(409);
+    const fresh=await(await c.get('/api/strategies')).json(),a=fresh.find(s=>s.id==='twenty-minute');expect((await c.patch('/api/strategies/twenty-minute/analysis-rule',{data:{revision:a.analysis_revision,rule:{first_n:0}}})).status()).toBe(400);
+    const all=(await(await c.get('/api/records')).json()).records;expect(all.length).toBe(before+4);const own=all.filter(r=>r.notes===note),summary=await(await c.get('/api/summary')).json();
+    const selected=summary.find(s=>s.strategy_id==='analysis-all').selected_ids;
+    expect(own.filter(r=>selected.includes(r.id)).map(r=>r.buy_time.slice(11)).sort()).toEqual(['09:31:00','10:00:00']);
+    expect(summary.find(s=>s.strategy_id==='all').samples).toBe(before+4);expect(summary.find(s=>s.strategy_id==='twenty-minute').points[0].count).toBe(0);
+    await c.post('/api/logout',{data:{}});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});expect((await(await c.get('/api/strategies')).json()).find(s=>s.id==='898').analysis_rule.before_time).toBe('13:00:00');
+  }finally{
+    for(const r of (await(await c.get('/api/records')).json()).records.filter(r=>r.notes===note))await c.delete('/api/records/'+r.id,{data:{revision:r.revision}});
+    const current=await(await c.get('/api/strategies')).json();for(const id of ids)await c.patch('/api/strategies/'+id+'/analysis-rule',{data:{revision:current.find(s=>s.id===id).analysis_revision,rule:old.find(s=>s.id===id).analysis_rule}});await c.dispose();
+  }
+});
+test('strategy analysis dialog previews, saves, survives reload and can reset to all',async({page})=>{
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.getByRole('button',{name:'策略比较',exact:false}).click();const row=page.locator('.strategy-row').filter({hasText:'20分钟策略'});
+  try{
+    await row.getByRole('button',{name:'分析范围',exact:true}).click();const form=page.locator('#analysis-rule-form');await form.locator('[name=first_enabled]').check();await form.locator('[name=before_enabled]').check();await form.locator('[name=first_n]').fill('10');await expect(page.locator('#analysis-rule-preview')).toContainText('13:00:00');await form.getByRole('button',{name:'保存分析范围'}).click();await expect(page.locator('#analysis-editor')).not.toBeVisible();await expect(row).toContainText('最早 10 条样本');
+    await page.reload();await page.getByRole('button',{name:'策略比较',exact:false}).click();await expect(row).toContainText('严格早于 13:00:00');await row.getByRole('button',{name:'分析范围',exact:true}).click();await expect(page.locator('[name=first_enabled]')).toBeChecked();await expect(page.locator('[name=before_enabled]')).toBeChecked();await page.locator('#analysis-rule-form').getByRole('button',{name:'恢复全部样本'}).click();await expect(page.locator('#analysis-rule-preview')).toContainText('全部策略样本');await page.locator('#analysis-rule-form').getByRole('button',{name:'保存分析范围'}).click();await expect(page.locator('#analysis-editor')).not.toBeVisible();
+    await page.locator('#strategy-summary').getByRole('button',{name:'查看入选范围'}).first().click();await expect(page.locator('#analysis-members')).toBeVisible();await expect(page.locator('#analysis-members-content')).toContainText('服务端总计');
+  }finally{
+    const current=await(await page.request.get('/api/strategies')).json(),s=current.find(s=>s.id==='twenty-minute');await page.request.patch('/api/strategies/twenty-minute/analysis-rule',{headers,data:{revision:s.analysis_revision,rule:{}}});
   }
 });
