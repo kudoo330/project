@@ -186,3 +186,14 @@ test('only empty strategies can be deleted; analysis rules clean up and records 
   expect((await c.delete('/api/strategies/'+strategy.id,{data:{}})).status()).toBe(404);
  }finally{if(record)await c.delete('/api/records/'+record.id,{data:{revision:record.revision}});await c.delete('/api/strategies/'+strategy.id,{data:{}});await c.dispose();}
 });
+test('tracking sort dropdowns order buy times and D0 through D10; missing returns stay last',async({page})=>{
+ const rows=[['300111.SZ','09:32:00',0],['300112.SZ','09:30:00',null],['300113.SZ','09:33:00',12],['300114.SZ','09:31:00',-2]].map(([symbol,time,value],i)=>({id:'sort-'+i,symbol,name:'SORT FIXTURE',strategy_id:'twenty-minute',strategy_name:'TEST',buy_time:'2026-10-16T'+time,created_at:'2026-10-16T01:00:00Z',tags:'',notes:'',version:'',batch_id:'test',tracking:{base:10,baseType:'TEST',progress:0,status:'追踪中',max:null,min:null,window:Array.from({length:11},(_,n)=>({n,date:'2026-10-16',value,state:'TEST'}))}}));
+ await page.route('**/api/records',route=>route.request().method()==='GET'?route.fulfill({json:{records:rows}}):route.continue());
+ await page.goto('/');await page.getByLabel('用户名').fill('viewer');await page.getByLabel('密码',{exact:true}).fill('local-test-viewer-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+ const codes=()=>page.locator('#records-table tbody tr td:nth-child(2) button').allTextContents();
+ await expect(page.locator('#record-sort-field option')).toHaveCount(12);
+ await page.locator('#record-sort-direction').selectOption('asc');await expect.poll(codes).toEqual(['300112.SZ','300114.SZ','300111.SZ','300113.SZ']);
+ await page.locator('#record-sort-field').selectOption('d0');await page.locator('#record-sort-direction').selectOption('desc');await expect.poll(codes).toEqual(['300113.SZ','300111.SZ','300114.SZ','300112.SZ']);
+ await page.locator('#record-sort-field').selectOption('d10');await page.locator('#record-sort-direction').selectOption('asc');await expect.poll(codes).toEqual(['300114.SZ','300111.SZ','300113.SZ','300112.SZ']);
+ await page.locator('#filter-search').fill('300111');await expect.poll(codes).toEqual(['300111.SZ']);
+});
