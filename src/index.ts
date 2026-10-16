@@ -1,19 +1,20 @@
 import { digest, identity, login, logout } from './auth';
 import { csvCell, normalizeSymbol, normalizeTime, optionalPositive, shanghaiNow } from './domain';
 import { daily, minute, verifiedDaily } from './market';
-import {mergeCloseWindow,afterBuyWindow} from './close-validation';
+import {mergeCloseWindow,collectionWindow} from './close-validation';
 import { calendarInfo, track } from './tracking';
 import type { Env, RecordRow } from './types';
 import {listStrategies,ensureAnalysisSchema} from './strategy-analysis';
 import {analysisSummary} from './analysis-summary';
 import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 import {runCloseSync,closeSyncStatus} from './close-sync';
+import {importReviewed} from './reviewed-import';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
 const text=(s:unknown,max=2000)=>String(s??'').slice(0,max);
-async function body(request:Request) {
-  if(Number(request.headers.get('Content-Length')??0)>200000)throw new Error('请求超过大小限制');
-  const s=await request.text();if(s.length>200000)throw new Error('请求超过大小限制');
+async function body(request:Request,limit=200000) {
+  if(Number(request.headers.get('Content-Length')??0)>limit)throw new Error('请求超过大小限制');
+  const s=await request.text();if(s.length>limit)throw new Error('请求超过大小限制');
   return JSON.parse(s);
 }
 async function getRecord(env:Env,id:string){return env.DB.prepare('SELECT * FROM records WHERE id=?').bind(id).first<RecordRow>();}
@@ -37,6 +38,9 @@ async function api(request:Request,env:Env,url:URL) {
   if(url.pathname==='/api/close-sync'&&request.method==='GET')return json(await closeSyncStatus(env));
   if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
+  if(url.pathname==='/api/import-reviewed'&&request.method==='POST'){
+    const result=await importReviewed(env.DB,await body(request,1500000),user);return json(result,result.status??200);
+  }
   if(url.pathname==='/api/strategies') {
     if(request.method==='GET')return json(await listStrategies(env));
     if(request.method==='POST') {
@@ -134,7 +138,7 @@ async function api(request:Request,env:Env,url:URL) {
       try {
         if(!quotes.has(r.symbol))quotes.set(r.symbol,verifiedDaily(env,r.symbol));
         const d=await quotes.get(r.symbol)!,saved=mergeCloseWindow(r,d),conflicts=saved.validation.filter(v=>v.status!=='matched');
-        const local=shanghaiNow(),due=afterBuyWindow(r).filter(date=>date<local.slice(0,10)||date===local.slice(0,10)&&local.slice(11)>='16:05:00');
+        const local=shanghaiNow(),due=collectionWindow(r).filter(date=>date<local.slice(0,10)||date===local.slice(0,10)&&local.slice(11)>='16:05:00');
         const missing=due.filter(date=>!d.bars.some(b=>b.date===date));
         const pending=[...new Set([...conflicts.map(v=>v.date),...missing])];
         const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;

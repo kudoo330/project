@@ -1,7 +1,7 @@
 import dates from './calendar.json';
 import {shanghaiNow} from './domain';
 import type {Bar,RecordRow} from './types';
-import {afterBuyWindow} from './close-validation';
+import {collectionWindow} from './close-validation';
 export const closeSyncSchedule={timezone:'Asia/Shanghai',starts:'16:05',ends:'23:55',intervalMinutes:10,limitPerRun:8,calendarEnd:dates.at(-1)};
 export function syncDay(now:Date){
   const local=shanghaiNow(now),date=local.slice(0,10);
@@ -16,10 +16,10 @@ export function closeTargets(record:RecordRow,today:string):string[]{
   const start=dates.indexOf(record.buy_time.slice(0,10)),end=dates.indexOf(today);
   if(start<0||end<start)return [];
   let invalid=new Set<string>();try{invalid=new Set((JSON.parse(record.market_data??'{}').validation??[]).filter((v:any)=>v.status!=='matched').map((v:any)=>v.date));}catch{}
-  const window=afterBuyWindow(record),known=new Set(storedBars(record).filter(b=>b.close>0&&Number.isFinite(b.close)&&b.crossCheck?.status==='matched'&&!invalid.has(b.date)).map(b=>b.date));
+  const window=collectionWindow(record),known=new Set(storedBars(record).filter(b=>b.close>0&&Number.isFinite(b.close)&&b.crossCheck?.status==='matched'&&!invalid.has(b.date)).map(b=>b.date));
   const cutoff=today+'T16:05:00';
   const fetched=record.fetched_at?shanghaiNow(new Date(record.fetched_at)):'';
-  // Only D+1 through D+10; D0 does not belong to this collection window.
+  // Collect D0 plus D+1 through D+10; completion still counts ten after-buy days.
   let pendingAdjustment=false;try{pendingAdjustment=JSON.parse(record.market_data??'{}').adjustment?.status==='pending'&&today<=(window.at(-1)??'');}catch{}
   return window.filter(date=>date<=today&&(!known.has(date)||date===today&&(fetched<cutoff||pendingAdjustment)));
 }

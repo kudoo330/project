@@ -1,6 +1,6 @@
 {
   "name": "a-share-tracker",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "db:local": "wrangler d1 migrations apply tracker --local",
     "deploy": "node scripts/deploy-web.mjs",
     "password": "node scripts/password.mjs",
-    "cloudflare:setup": "node scripts/cloudflare-setup.mjs"
+    "cloudflare:setup": "node scripts/cloudflare-setup.mjs",
+    "test:import": "node scripts/test-reviewed-import.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261016.1",

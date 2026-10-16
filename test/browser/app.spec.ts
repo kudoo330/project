@@ -22,7 +22,7 @@ test('viewer may read but cannot create, edit, delete or refresh',async()=>{
   const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});
   const response=await c.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});expect(response.ok()).toBeTruthy();
   expect((await c.get('/api/records')).status()).toBe(200);
-  for(const [path,method]of [['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST'],['/api/strategies/twenty-minute/analysis-rule','PATCH']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
+  for(const [path,method]of [['/api/import-reviewed','POST'],['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST'],['/api/strategies/twenty-minute/analysis-rule','PATCH']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
   await c.post('/api/logout',{data:{}});expect((await c.get('/api/records')).status()).toBe(401);await c.dispose();
 });
 test('origin protection, cross-strategy samples, retries, revision and persistence',async()=>{
@@ -102,5 +102,23 @@ test('strategy analysis dialog previews, saves, survives reload and can reset to
     await page.locator('#strategy-summary').getByRole('button',{name:'查看入选范围'}).first().click();await expect(page.locator('#analysis-members')).toBeVisible();await expect(page.locator('#analysis-members-content')).toContainText('服务端总计');
   }finally{
     const current=await(await page.request.get('/api/strategies')).json(),s=current.find(s=>s.id==='twenty-minute');await page.request.patch('/api/strategies/twenty-minute/analysis-rule',{headers,data:{revision:s.analysis_revision,rule:{}}});
+  }
+});
+
+test('admin reviewed-file import saves reference prices and safely replays',async({page,request})=>{
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  const strategy='LOCAL-IMPORT-'+crypto.randomUUID(),stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19);
+  const fixture=[{strategy,symbol:'300111.SZ',name:'TEST FIXTURE',buy_time:stamp,reference_price:12.34,reference_evidence:{provider:'synthetic test source'}}];
+  const upload=()=>page.locator('#reviewed-file').setInputFiles({name:'reviewed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});
+  page.on('dialog',dialog=>dialog.accept());
+  const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});
+  try{
+    let saved=page.waitForResponse(r=>r.url().endsWith('/api/import-reviewed')&&r.request().method()==='POST');await upload();expect((await saved).ok()).toBeTruthy();
+    let own=(await(await c.get('/api/records')).json()).records.filter(r=>r.strategy_name===strategy);expect(own).toHaveLength(1);expect(own[0].reference_price).toBe(12.34);expect(own[0].actual_price).toBeNull();
+    saved=page.waitForResponse(r=>r.url().endsWith('/api/import-reviewed')&&r.request().method()==='POST');await upload();expect((await(await saved).json()).replayed).toBeTruthy();
+    own=(await(await c.get('/api/records')).json()).records.filter(r=>r.strategy_name===strategy);expect(own).toHaveLength(1);
+  }finally{
+    for(const r of (await(await c.get('/api/records')).json()).records.filter(r=>r.strategy_name===strategy))await c.delete('/api/records/'+r.id,{data:{revision:r.revision}});
+    await c.dispose();
   }
 });

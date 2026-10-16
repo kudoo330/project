@@ -9,12 +9,12 @@ test('close sync uses Shanghai 16:05, market holidays and finite calendar covera
   assert.equal(syncDay(new Date('2026-10-17T08:05:00Z')).active,false);assert.match(syncDay(new Date('2027-01-04T08:05:00Z')).reason,/覆盖/);
 });
 test('yesterday purchase requires today close even without P0 or company-action check',()=>{
-  const r=record('a','2026-10-15','300111.SZ',[{date:'2026-10-15',close:3}]);assert.deepEqual(closeTargets(r,'2026-10-16'),['2026-10-16']);
-  const intraday={...r,fetched_at:'2026-10-16T07:59:00Z',market_data:JSON.stringify({bars:[{date:'2026-10-15',close:3},{date:'2026-10-16',close:4,crossCheck:{status:'matched'}}]})};assert.deepEqual(closeTargets(intraday,'2026-10-16'),['2026-10-16']);
+  const r=record('a','2026-10-15','300111.SZ',[{date:'2026-10-15',close:3,crossCheck:{status:'matched'}}]);assert.deepEqual(closeTargets(r,'2026-10-16'),['2026-10-16']);
+  const intraday={...r,fetched_at:'2026-10-16T07:59:00Z',market_data:JSON.stringify({bars:[{date:'2026-10-15',close:3,crossCheck:{status:'matched'}},{date:'2026-10-16',close:4,crossCheck:{status:'matched'}}]})};assert.deepEqual(closeTargets(intraday,'2026-10-16'),['2026-10-16']);
   assert.deepEqual(closeTargets({...intraday,fetched_at:'2026-10-16T08:05:00Z'},'2026-10-16'),[]);
 });
 test('D+10 is included, future dates excluded and complete windows stop fetching',()=>{
-  const i=dates.indexOf('2026-10-15'),window=dates.slice(i,i+11),r=record('a');assert.equal(closeTargets(r,window[10]).length,10);assert.equal(closeTargets(r,window[11]??dates[i+11]).length,10);
+  const i=dates.indexOf('2026-10-15'),window=dates.slice(i,i+11),r=record('a');assert.equal(closeTargets(r,window[10]).length,11);assert.equal(closeTargets(r,window[11]??dates[i+11]).length,11);
   const full={...r,market_data:JSON.stringify({bars:window.map(date=>({date,close:10,crossCheck:{status:'matched'}}))}),fetched_at:window[10]+'T08:05:00Z'};assert.deepEqual(closeTargets(full,dates[i+11]),[]);
   assert.deepEqual(closeTargets(r,'2026-10-14'),[]);assert.deepEqual(closeTargets(record('bj','2026-10-15','920162.BJ'),'2026-10-16'),[]);
 });
