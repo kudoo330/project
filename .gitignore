@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+dist/
+*.sqlite*
+playwright-report/
+test-results/
+wrangler.deploy.jsonc
+.backups/

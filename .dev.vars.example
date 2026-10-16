@@ -1,0 +1,5 @@
+# Copy to .dev.vars for LOCAL development only. Never commit actual values.
+# Generate each password hash with: npm run password
+ADMIN_PASSWORD_HASH=
+VIEWER_USERNAME=viewer
+VIEWER_PASSWORD_HASH=
