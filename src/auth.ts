@@ -25,7 +25,12 @@ export async function login(request: Request, env: Env) {
   const raw=await request.text();
   if(raw.length>4096)return Response.json({error:'登录请求过大'},{status:413});
   const data = JSON.parse(raw) as { username?: string; password?: string };
-  const username = String(data.username ?? '').slice(0, 80), password = String(data.password ?? '');
+  const username = String(data.username ?? '').slice(0, 80);
+  // Proxy-backed Codex credentials travel in a scoped HTTPS header, never in a URL.
+  // This uses the same admin hash, attempt limit and session creation as browser login.
+  const scopedPassword=request.headers.get('X-Tracker-Admin-Password');
+  if(scopedPassword!==null&&username!==env.ADMIN_USERNAME)return Response.json({error:'此凭据通道仅用于管理员登录'},{status:401});
+  const password = scopedPassword??String(data.password ?? '');
   if (password.length > 256) return Response.json({ error: '登录失败' }, { status: 400 });
   const key = await digest(request.headers.get('CF-Connecting-IP') ?? 'local');
   // Atomic reservation prevents concurrent requests from bypassing the attempt limit.

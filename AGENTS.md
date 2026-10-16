@@ -16,3 +16,5 @@
 - 主题变量在 `public/tokens.css`，行情适配器在 `src/market.ts`，定价与统计在 `src/domain.ts` / `src/tracking.ts`，权限在 `src/auth.ts`。
 
 - 用户已授权从Codex读取线上记录。使用7天可撤销只读密钥TRACKER_READ_TOKEN，仅通过HTTPS请求头发往project.kudoo330.workers.dev，禁止聊天索取、打印或提交。不得把只读密钥升级为写权限，详见docs/CODEX-READ-ACCESS.md。
+
+- 用户现已明确授权Codex管理员访问，使用TRACKER_ADMIN_USERNAME与安全密钥TRACKER_ADMIN_PASSWORD通过现有登录获取临时会话。只读密钥仍不具有写权限。管理员会话可以按用户指令读取、导入、修改、删除与刷新；不得打印凭据或将会话保存到文件。详见docs/CODEX-ADMIN-ACCESS.md。

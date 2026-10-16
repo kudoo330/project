@@ -156,3 +156,19 @@ test('admin manages scoped read access; token reads records but cannot mutate or
     expect((await request.get('/api/readonly/records',{headers:{'X-Tracker-Read-Token':newToken}})).status()).toBe(401);await expect(page.locator('#read-token-result')).toBeHidden();
   }finally{await page.locator('#revoke-read-token').click();}
 });
+test('Codex password header uses normal admin login, Origin checks and sessions',async({request})=>{
+  const loginHeaders={Origin:origin,'X-Tracker-Admin-Password':'local-test-admin-only'};
+  expect((await request.post('/api/login',{headers:{...loginHeaders,Origin:'https://untrusted.invalid'},data:{username:'admin'}})).status()).toBe(403);
+  expect((await request.post('/api/login',{headers:loginHeaders,data:{username:'viewer'}})).status()).toBe(401);
+  expect((await request.post('/api/login',{headers:{...loginHeaders,'X-Tracker-Admin-Password':'wrong-test-password'},data:{username:'admin'}})).status()).toBe(401);
+  const login=await request.post('/api/login',{headers:loginHeaders,data:{username:'admin'}});expect(login.status()).toBe(200);expect((await login.json()).role).toBe('admin');
+  expect((await request.get('/api/records')).status()).toBe(200);
+  try{
+    const request_id=crypto.randomUUID(),stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19);
+    expect((await request.post('/api/records',{headers,data:{request_id,rows:[{strategy_id:'twenty-minute',symbol:'300111.SZ',buy_time:stamp,notes:'LOCAL-ADMIN-'+request_id}]}})).status()).toBe(201);
+    const row=(await(await request.get('/api/records')).json()).records.find(r=>r.notes==='LOCAL-ADMIN-'+request_id);expect(row).toBeTruthy();
+    expect((await request.patch('/api/records/'+row.id,{headers,data:{revision:row.revision,notes:'LOCAL-ADMIN-'+request_id+'-edited'}})).status()).toBe(200);
+    expect((await request.delete('/api/records/'+row.id,{headers,data:{revision:row.revision+1}})).status()).toBe(200);
+  }finally{await request.post('/api/logout',{headers,data:{}});}
+  expect((await request.get('/api/records')).status()).toBe(401);
+});
