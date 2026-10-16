@@ -1,4 +1,5 @@
 import {parseCSV} from './csv.js';
+import {parseReviewedPaste} from './reviewed-paste.js';
 import {chart} from './chart.js';
 import {normalizeAnalysisRule,describeAnalysisRule,selectAnalysisSamples} from './analysis-scope.js';
 const $=s=>document.querySelector(s),state={user:null,records:[],strategies:[],summary:[],editing:null,ruleStrategy:null,requestId:crypto.randomUUID(),importRows:[],importId:crypto.randomUUID(),csv:null};
@@ -119,6 +120,13 @@ $('#paste').addEventListener('input',()=>{state.csv=null;$('#mapping').replaceCh
 for(const id of ['mapping','import-date','import-time','import-strategy'])$('#'+id).addEventListener('input',()=>$('#submit-import').disabled=true);
 $('#preview-import').onclick=()=>{
   try{
+    state.reviewedPaste=null;
+    const reviewed=parseReviewedPaste($('#paste').value);
+    if(reviewed){
+      state.reviewedPaste=reviewed;state.importId=crypto.randomUUID();const table=$('#import-preview');table.replaceChildren();const head=el('tr');['策略','股票','买入时间','参考价','来源'].forEach(v=>head.append(el('th',v)));table.append(head);
+      for(const r of reviewed){const tr=el('tr');[r.strategy,r.symbol+' '+r.name,r.buy_time,r.reference_price??'留空',r.reference_evidence.provider].forEach(v=>tr.append(el('td',v)));table.append(tr);}
+      $('#import-summary').textContent=`核验文字共${reviewed.length}条、${new Set(reviewed.map(r=>r.symbol)).size}只股票。缺少的策略会新建，参考价与成交价分开保存。`;$('#submit-import').disabled=false;return;
+    }
     let raw=[];const unified=$('#import-strategy').value,date=$('#import-date').value,time=$('#import-time').value;
     if(state.csv){const mapping=Object.fromEntries([...$('#mapping').querySelectorAll('select')].map(s=>[s.dataset.field,s.value]));raw=state.csv.slice(1).map(row=>Object.fromEntries(Object.entries(mapping).filter(([,i])=>i!=='').map(([k,i])=>[k,row[Number(i)]??''])));}
     else raw=$('#paste').value.trim().split(/\r?\n/).filter(Boolean).map(line=>{const a=line.trim().split(/[\s,，]+/);return {symbol:a[0],time:a[1]||time};});
@@ -127,7 +135,7 @@ $('#preview-import').onclick=()=>{
     state.importRows=rows;state.importId=crypto.randomUUID();const table=$('#import-preview');table.replaceChildren();const head=el('tr');['行','股票','策略','买入时点','校验'].forEach(s=>head.append(el('th',s)));table.append(head);rows.forEach(r=>{const tr=el('tr');[r.line,r.symbol,state.strategies.find(s=>s.id===r.strategy_id)?.name||'—',r.buy_time,r.error||'可提交'].forEach(s=>tr.append(el('td',s)));table.append(tr);});const valid=rows.filter(r=>!r.error);$('#import-summary').textContent=`输入${rows.length}行，将创建${valid.length}个策略样本，${new Set(valid.map(r=>r.symbol)).size}只不重复股票。${rows.length-valid.length}行有错误；请修正后整批提交。`;$('#submit-import').disabled=valid.length!==rows.length;
   }catch(e){message(e.message);$('#submit-import').disabled=true;}
 };
-$('#submit-import').onclick=async()=>{const b=$('#submit-import');b.disabled=true;try{await createRows(state.importRows.map(({error,line,...r})=>r),state.importId);$('#importer').close();await load();message('批量导入已保存');}catch(e){message(e.message);b.disabled=false;}};
+$('#submit-import').onclick=async()=>{const b=$('#submit-import');b.disabled=true;try{if(state.reviewedPaste){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(state.reviewedPaste)));const request_id='paste-'+[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');await send('/api/import-reviewed',{rows:state.reviewedPaste,request_id});}else await createRows(state.importRows.map(({error,line,...r})=>r),state.importId);$('#importer').close();await load();message('批量导入已保存');}catch(e){message(e.message);b.disabled=false;}};
 $('#research-form').addEventListener('submit',async e=>{
   e.preventDefault();const f=e.currentTarget,b=f.querySelector('button'),d=Object.fromEntries(new FormData(f)),symbols=[...new Set(d.symbols.toUpperCase().split(/[,，\s]+/).filter(Boolean))],result=$('#research-result');b.disabled=true;result.textContent='正在查询…';
   try{

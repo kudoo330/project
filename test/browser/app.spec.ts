@@ -122,3 +122,17 @@ test('admin reviewed-file import saves reference prices and safely replays',asyn
     await c.dispose();
   }
 });
+test('reviewed text previews multiple strategies and preserves manual price and original time',async({page})=>{
+  const {reviewedPasteHeader}=await import('../../public/reviewed-paste.js');
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  const strategy='LOCAL-PASTE-'+crypto.randomUUID(),stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19);
+  const text=reviewedPasteHeader+'\n'+[strategy,'300111.SZ','TEST',stamp,'83.95','用户手动提供','original time','-','-'].join('\t');
+  const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});
+  try{
+    await page.locator('#import').click();await page.locator('#paste').fill(text);await page.locator('#preview-import').click();await expect(page.locator('#import-summary')).toContainText('核验文字共1条');await expect(page.locator('#import-preview')).toContainText('83.95');
+    const saved=page.waitForResponse(r=>r.url().endsWith('/api/import-reviewed')&&r.request().method()==='POST');await page.locator('#submit-import').click();expect((await saved).ok()).toBeTruthy();
+    const rows=(await(await c.get('/api/records')).json()).records.filter(r=>r.strategy_name===strategy);expect(rows).toHaveLength(1);expect(rows[0].reference_price).toBe(83.95);expect(rows[0].actual_price).toBeNull();expect(rows[0].original_time).toBe('original time');
+  }finally{
+    for(const r of (await(await c.get('/api/records')).json()).records.filter(r=>r.strategy_name===strategy))await c.delete('/api/records/'+r.id,{data:{revision:r.revision}});await c.dispose();
+  }
+});
