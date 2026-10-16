@@ -42,7 +42,10 @@ export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDa
         for(const r of group.records){
           const missing=afterBuyWindow(r).filter(d=>d<=day.date&&!available.has(d));
           if(missing.length)error='缺少交叉验证通过的收盘价：'+missing.join('、');
-          await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name,JSON.stringify(mergeCloseWindow(r,quote)),quote.fetchedAt,missing.length?'自动同步：缺少交叉验证通过的收盘价 '+missing.join('、'):null,r.id,r.revision).run();
+          const saved=mergeCloseWindow(r,quote);
+          const recordError=missing.length?'自动同步：缺少交叉验证通过的收盘价 '+missing.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
+          if(recordError)error=recordError;
+          await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name,JSON.stringify(saved),quote.fetchedAt,recordError,r.id,r.revision).run();
         }
       }else{
         // Preserve both the last valid quote and fetch timestamp on transport failures.

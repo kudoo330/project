@@ -20,7 +20,8 @@ export function closeTargets(record:RecordRow,today:string):string[]{
   const cutoff=today+'T16:05:00';
   const fetched=record.fetched_at?shanghaiNow(new Date(record.fetched_at)):'';
   // Only D+1 through D+10; D0 does not belong to this collection window.
-  return window.filter(date=>date<=today&&(!known.has(date)||date===today&&fetched<cutoff));
+  let pendingAdjustment=false;try{pendingAdjustment=JSON.parse(record.market_data??'{}').adjustment?.status==='pending'&&today<=(window.at(-1)??'');}catch{}
+  return window.filter(date=>date<=today&&(!known.has(date)||date===today&&(fetched<cutoff||pendingAdjustment)));
 }
 export function planCloseSync(records:RecordRow[],today:string,lastAttempt:Map<string,string>=new Map()){
   const bySymbol=new Map<string,{symbol:string;records:RecordRow[];dates:Set<string>}>();

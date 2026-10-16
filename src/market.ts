@@ -1,6 +1,7 @@
 import type { Bar, Env } from './types';
 import { closedBars } from './domain';
 import {compareCloses} from './close-validation';
+import type {CorporateSource} from './corporate-actions';
 export const PROVIDER = '东方财富（不复权；成交量原始单位：手）';
 const FIELD = 'fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58';
 type QuoteData = { code: string; name: string; bars: Bar[]; fetchedAt: string; cached: boolean; provider: string; adjustment: string };
@@ -58,5 +59,27 @@ export async function verifiedDaily(env:Env,symbol:string,force=false){
   if(json.code!==0)throw new Error('腾讯交叉来源无有效数据，收盘价待核对');
   const secondary=(json.data?.[key]?.day??[]).map(v=>({date:v[0],open:Number(v[1]),close:Number(v[2]),high:Number(v[3]),low:Number(v[4]),volume:Number(v[5])})).filter(b=>Number.isFinite(b.close)&&b.close>0);
   const checkedAt=new Date().toISOString();
-  return {...primary,...compareCloses(closedBars(primary.bars),closedBars(secondary),checkedAt),provider:'东方财富收盘价 / 腾讯不复权日线交叉核对',checkedAt};
+  const corporateSource=await corporateFactors(symbol);
+  return {...primary,...compareCloses(closedBars(primary.bars),closedBars(secondary),checkedAt),provider:'东方财富收盘价 / 腾讯不复权日线交叉核对',checkedAt,corporateSource};
+}
+async function corporateFactors(symbol:string):Promise<CorporateSource>{
+  const [code,market]=symbol.split('.'),key=market.toLowerCase()+code,fetchedAt=new Date().toISOString();
+  try{
+    const [factorResponse,qfqResponse]=await Promise.all([
+      fetch('https://finance.sina.com.cn/realstock/company/'+key+'/hfq.js',{signal:AbortSignal.timeout(12000)}),
+      fetch('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?'+new URLSearchParams({param:key+',day,,,600,qfq'}),{signal:AbortSignal.timeout(12000)})
+    ]);
+    if(!factorResponse.ok||!qfqResponse.ok)throw new Error('复权来源请求失败');
+    const line=(await factorResponse.text()).split(/\r?\n/)[0];
+    if(!line.startsWith('var '+key+'hfq=')||line.length>200000)throw new Error('复权因子响应格式异常');
+    const raw=JSON.parse(line.slice(line.indexOf('=')+1).replace(/;\s*$/,'')) as {data:{d:string;f:string}[]};
+    const factors=raw.data.map(f=>({date:f.d,factor:Number(f.f)}));
+    if(!factors.length||factors.some(f=>!/^\d{4}-\d{2}-\d{2}$/.test(f.date)||!Number.isFinite(f.factor)||f.factor<=0))throw new Error('复权因子无效');
+    const json=await qfqResponse.json() as {code:number;data?:Record<string,{qfqday?:string[][];day?:string[][]}>};
+    if(json.code!==0)throw new Error('前复权日线无效');
+    const rows=json.data?.[key]?.qfqday??json.data?.[key]?.day??[];
+    const qfq=closedBars(rows.map(v=>({date:v[0],open:Number(v[1]),close:Number(v[2]),high:Number(v[3]),low:Number(v[4]),volume:Number(v[5])}))).filter(b=>b.close>0&&Number.isFinite(b.close));
+    if(!qfq.length)throw new Error('缺少前复权日线');
+    return {status:'available',factors,qfq,fetchedAt};
+  }catch(e){return {status:'unavailable',factors:[],qfq:[],fetchedAt,error:e instanceof Error?e.message:'复权来源不可用'};}
 }

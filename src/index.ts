@@ -137,7 +137,7 @@ async function api(request:Request,env:Env,url:URL) {
         const local=shanghaiNow(),due=afterBuyWindow(r).filter(date=>date<local.slice(0,10)||date===local.slice(0,10)&&local.slice(11)>='16:05:00');
         const missing=due.filter(date=>!d.bars.some(b=>b.date===date));
         const pending=[...new Set([...conflicts.map(v=>v.date),...missing])];
-        const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):null;
+        const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
         await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(d.name,JSON.stringify(saved),d.fetchedAt,error,id,r.revision).run();
         results.push({id,ok:!error,cached:d.cached,error});
       } catch(e) {
