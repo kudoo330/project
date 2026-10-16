@@ -3,12 +3,15 @@ import { closedBars } from './domain';
 import {compareCloses} from './close-validation';
 import type {CorporateSource} from './corporate-actions';
 export const PROVIDER = '东方财富（不复权；成交量原始单位：手）';
+const REQUEST_HEADERS={'User-Agent':'Mozilla/5.0','Referer':'https://quote.eastmoney.com/'};
+const SINA_HEADERS={'User-Agent':'Mozilla/5.0','Referer':'https://finance.sina.com.cn/'};
 const FIELD = 'fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58';
 type QuoteData = { code: string; name: string; bars: Bar[]; fetchedAt: string; cached: boolean; provider: string; adjustment: string };
 async function upstream(url: string) {
   let r:Response;
-  try{r=await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) });}
+  try{r=await fetch(url, { headers: REQUEST_HEADERS, signal: AbortSignal.timeout(12000) });}
   catch{throw new Error('行情网络不可达或超时；已保存的旧数据不会被清空。');}
+  if([429,500,502,503,504,520,522,524].includes(r.status)){try{r=await fetch(url,{headers:REQUEST_HEADERS,signal:AbortSignal.timeout(12000)});}catch{throw new Error('行情重试仍不可达；旧数据保留。');}}
   if (!r.ok) throw new Error('行情请求失败：HTTP '+r.status);
   const j = await r.json() as { rc?:number;data?:{code:string;name:string;qtMiscType?:number;type?:number;klines?:string[];trends?:string[]} };
   if (j.rc !== 0 || !j.data) throw new Error('供应商无有效证券数据，不能确认代码或市场');
@@ -49,25 +52,32 @@ export async function minute(env:Env,symbol:string,date:string) {
 }
 export {closedBars};
 export async function verifiedDaily(env:Env,symbol:string,force=false){
-  const primary=await daily(env,symbol,force),[code,exchange]=symbol.split('.');
+  let primary:QuoteData;
+  try{primary=await daily(env,symbol,force);}catch{
+    const bars=await sinaDaily(symbol);primary={code:symbol.split('.')[0],name:'',bars,fetchedAt:new Date().toISOString(),cached:false,provider:'新浪（东方财富暂不可用；不复权）',adjustment:'不复权；公司行动另行核对'};
+  }
+  const primaryProvider=primary.provider.startsWith('新浪')?'新浪':'东方财富',[code,exchange]=symbol.split('.');
   const key=exchange.toLowerCase()+code;
   const param=new URLSearchParams({param:key+',day,,,600,'});
-  let response:Response;
-  try{response=await fetch('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?'+param,{signal:AbortSignal.timeout(12000)});}catch{throw new Error('腾讯交叉来源暂不可达，收盘价待核对；旧数据保留。');}
-  if(!response.ok)throw new Error('腾讯交叉来源HTTP '+response.status+'，收盘价待核对');
-  const json=await response.json() as {code:number;data?:Record<string,{day?:string[][]}>};
-  if(json.code!==0)throw new Error('腾讯交叉来源无有效数据，收盘价待核对');
-  const secondary=(json.data?.[key]?.day??[]).map(v=>({date:v[0],open:Number(v[1]),close:Number(v[2]),high:Number(v[3]),low:Number(v[4]),volume:Number(v[5])})).filter(b=>Number.isFinite(b.close)&&b.close>0);
+  let secondary:Bar[]=[],secondaryProvider='腾讯';
+  try{
+    const response=await fetch('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?'+param,{headers:REQUEST_HEADERS,signal:AbortSignal.timeout(12000)});
+    if(!response.ok)throw new Error('腾讯HTTP '+response.status);
+    const json=await response.json() as {code:number;data?:Record<string,{day?:string[][]}>};
+    if(json.code!==0)throw new Error('腾讯数据无效');
+    secondary=(json.data?.[key]?.day??[]).map(v=>({date:v[0],open:Number(v[1]),close:Number(v[2]),high:Number(v[3]),low:Number(v[4]),volume:Number(v[5])})).filter(b=>Number.isFinite(b.close)&&b.close>0);
+  }catch{ /* A distinct fallback source is still cross-checked, never blindly adopted. */ }
+  if(!secondary.length){if(primaryProvider==='新浪')throw new Error('东方财富与腾讯均不可用；缺少独立交叉来源，不采纳单源收盘价');secondary=await sinaDaily(symbol);secondaryProvider='新浪';}
   const checkedAt=new Date().toISOString();
   const corporateSource=await corporateFactors(symbol);
-  return {...primary,...compareCloses(closedBars(primary.bars),closedBars(secondary),checkedAt),provider:'东方财富收盘价 / 腾讯不复权日线交叉核对',checkedAt,corporateSource};
+  return {...primary,...compareCloses(closedBars(primary.bars),closedBars(secondary),checkedAt,[primaryProvider,secondaryProvider]),provider:primaryProvider+'收盘价 / '+secondaryProvider+'不复权日线交叉核对',checkedAt,corporateSource};
 }
 async function corporateFactors(symbol:string):Promise<CorporateSource>{
   const [code,market]=symbol.split('.'),key=market.toLowerCase()+code,fetchedAt=new Date().toISOString();
   try{
     const [factorResponse,qfqResponse]=await Promise.all([
-      fetch('https://finance.sina.com.cn/realstock/company/'+key+'/hfq.js',{signal:AbortSignal.timeout(12000)}),
-      fetch('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?'+new URLSearchParams({param:key+',day,,,600,qfq'}),{signal:AbortSignal.timeout(12000)})
+      fetch('https://finance.sina.com.cn/realstock/company/'+key+'/hfq.js',{headers:SINA_HEADERS,signal:AbortSignal.timeout(12000)}),
+      fetch('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?'+new URLSearchParams({param:key+',day,,,600,qfq'}),{headers:REQUEST_HEADERS,signal:AbortSignal.timeout(12000)})
     ]);
     if(!factorResponse.ok||!qfqResponse.ok)throw new Error('复权来源请求失败');
     const line=(await factorResponse.text()).split(/\r?\n/)[0];
@@ -82,4 +92,17 @@ async function corporateFactors(symbol:string):Promise<CorporateSource>{
     if(!qfq.length)throw new Error('缺少前复权日线');
     return {status:'available',factors,qfq,fetchedAt};
   }catch(e){return {status:'unavailable',factors:[],qfq:[],fetchedAt,error:e instanceof Error?e.message:'复权来源不可用'};}
+}
+
+async function sinaDaily(symbol:string):Promise<Bar[]>{
+  const [code,market]=symbol.split('.'),key=market.toLowerCase()+code;
+  const url='https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_data=/CN_MarketDataService.getKLineData?symbol='+key+'&scale=240&ma=no&datalen=600';
+  const response=await fetch(url,{headers:SINA_HEADERS,signal:AbortSignal.timeout(12000)});
+  if(!response.ok)throw new Error('腾讯不可用，新浪补充来源HTTP '+response.status+'；收盘价待核对');
+  const text=await response.text(),start=text.indexOf('(['),end=text.lastIndexOf('])');
+  if(start<0||end<0||text.length>1000000)throw new Error('新浪补充来源格式无效');
+  const rows=JSON.parse(text.slice(start+1,end+1)) as {day:string;open:string;close:string;high:string;low:string;volume:string}[];
+  const bars=rows.map(v=>({date:v.day.slice(0,10),open:Number(v.open),close:Number(v.close),high:Number(v.high),low:Number(v.low),volume:Number(v.volume)})).filter(b=>/^\d{4}-\d{2}-\d{2}$/.test(b.date)&&Number.isFinite(b.close)&&b.close>0);
+  if(!bars.length)throw new Error('腾讯与新浪交叉来源均缺少有效日线');
+  return bars;
 }

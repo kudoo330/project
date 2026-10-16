@@ -9,6 +9,7 @@ import {analysisSummary} from './analysis-summary';
 import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 import {runCloseSync,closeSyncStatus} from './close-sync';
 import {importReviewed} from './reviewed-import';
+import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
@@ -55,6 +56,7 @@ async function api(request:Request,env:Env,url:URL) {
     if(request.method==='DELETE'){await revokeReadToken(env.DB);return json({ok:true});}
     return json({error:'请求方法不支持'},405);
   }
+  if(url.pathname==='/api/import-closes'&&request.method==='POST')return json(await importVerifiedCloses(env.DB,await body(request,1500000),user.username));
   if(url.pathname==='/api/import-reviewed'&&request.method==='POST'){
     const result=await importReviewed(env.DB,await body(request,1500000),user);return json(result,result.status??200);
   }
@@ -159,7 +161,7 @@ async function api(request:Request,env:Env,url:URL) {
         const missing=due.filter(date=>!d.bars.some(b=>b.date===date));
         const pending=[...new Set([...conflicts.map(v=>v.date),...missing])];
         const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
-        await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(d.name,JSON.stringify(saved),d.fetchedAt,error,id,r.revision).run();
+        await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(d.name||r.name,JSON.stringify(saved),d.fetchedAt,error,id,r.revision).run();
         results.push({id,ok:!error,cached:d.cached,error});
       } catch(e) {
         const error=e instanceof Error?e.message:'行情请求失败';

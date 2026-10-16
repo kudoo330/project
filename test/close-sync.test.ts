@@ -16,7 +16,7 @@ test('yesterday purchase requires today close even without P0 or company-action 
 test('D+10 is included, future dates excluded and complete windows stop fetching',()=>{
   const i=dates.indexOf('2026-10-15'),window=dates.slice(i,i+11),r=record('a');assert.equal(closeTargets(r,window[10]).length,11);assert.equal(closeTargets(r,window[11]??dates[i+11]).length,11);
   const full={...r,market_data:JSON.stringify({bars:window.map(date=>({date,close:10,crossCheck:{status:'matched'}}))}),fetched_at:window[10]+'T08:05:00Z'};assert.deepEqual(closeTargets(full,dates[i+11]),[]);
-  assert.deepEqual(closeTargets(r,'2026-10-14'),[]);assert.deepEqual(closeTargets(record('bj','2026-10-15','920162.BJ'),'2026-10-16'),[]);
+  assert.deepEqual(closeTargets(r,'2026-10-14'),[]);assert.deepEqual(closeTargets(record('bj','2026-10-15','920162.BJ'),'2026-10-16'),['2026-10-15']);
 });
 test('deduplicate market requests across strategies, retain samples, rotate failures',()=>{
   const rows=[record('a'),record('b'),record('c','2026-10-15','688265.SH')],plans=planCloseSync(rows,'2026-10-16',new Map([['300111.SZ','2026-10-16T08:05:00Z']]));

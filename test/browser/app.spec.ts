@@ -22,7 +22,7 @@ test('viewer may read but cannot create, edit, delete or refresh',async()=>{
   const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});
   const response=await c.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});expect(response.ok()).toBeTruthy();
   expect((await c.get('/api/records')).status()).toBe(200);
-  for(const [path,method]of [['/api/import-reviewed','POST'],['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST'],['/api/strategies/twenty-minute/analysis-rule','PATCH']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
+  for(const [path,method]of [['/api/import-closes','POST'],['/api/import-reviewed','POST'],['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST'],['/api/strategies/twenty-minute/analysis-rule','PATCH']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
   await c.post('/api/logout',{data:{}});expect((await c.get('/api/records')).status()).toBe(401);await c.dispose();
 });
 test('origin protection, cross-strategy samples, retries, revision and persistence',async()=>{

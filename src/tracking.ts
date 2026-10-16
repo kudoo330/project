@@ -15,13 +15,13 @@ export function track(record:RecordRow, now=new Date()) {
   const time=record.buy_time.slice(11,19),inSession=time>='09:30:00'&&time<='11:30:00'||time>='13:00:00'&&time<='15:00:00';
   const calendarUsable=!record.symbol.endsWith('.BJ')&&index>=0&&inSession;
   const window=Array.from({length:11},(_,n)=>{
-    const day=calendarUsable?dates[index+n]??null:null;
+    const day=n===0&&inSession?date:calendarUsable?dates[index+n]??null:null;
     const b=day?byDate.get(day):undefined;
     const conflict=day?data.validation?.some(v=>v.date===day&&v.status!=='matched'):false;
-    const checked=day!==null&&(adjusted&&day<=a!.anchor||record.checked_through!==null&&day<=record.checked_through);
+    const checked=day!==null&&(n===0&&b?.crossCheck?.status==='matched'||adjusted&&day<=a!.anchor||record.checked_through!==null&&day<=record.checked_through);
     const close=b?b.close*(adjusted&&day?a!.dateMultipliers[day]??1:1):null;
     const state=!day?'日历待核实':day>local.slice(0,10)?'待更新':day===local.slice(0,10)&&local.slice(11)<'16:00:00'?'盘中，未确认收盘':!b?'缺少有效报价':base===null?'待补价':!checked?'公司行动口径待核对':'有效价格观察';
-    return {n,date:day,close,rawClose:b?.close??null,value:close!==null&&checked&&!conflict&&!adjustmentPending?change(close,base):null,state:adjustmentPending?'除权口径待核对':conflict?'收盘价交叉核对待确认':state};
+    return {n,date:day,close,rawClose:b?.close??null,value:close!==null&&checked&&!conflict&&(!adjustmentPending||n===0)?change(n===0?b!.close:close,n===0?rawBase:base):null,state:adjustmentPending&&n>0?'除权口径待核对':conflict?'收盘价交叉核对待确认':state};
   });
   const complete=window.slice(1).every(w=>w.value!==null);
   const ended=window[10].date!==null&&window[10].date<local.slice(0,10);

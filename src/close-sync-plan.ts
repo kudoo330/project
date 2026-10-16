@@ -12,7 +12,6 @@ export function syncDay(now:Date){
 }
 export function storedBars(record:RecordRow):Bar[]{try{return JSON.parse(record.market_data??'{}').bars??[];}catch{return [];}}
 export function closeTargets(record:RecordRow,today:string):string[]{
-  if(record.symbol.endsWith('.BJ'))return []; // Calendar coverage remains unverified.
   const start=dates.indexOf(record.buy_time.slice(0,10)),end=dates.indexOf(today);
   if(start<0||end<start)return [];
   let invalid=new Set<string>();try{invalid=new Set((JSON.parse(record.market_data??'{}').validation??[]).filter((v:any)=>v.status!=='matched').map((v:any)=>v.date));}catch{}

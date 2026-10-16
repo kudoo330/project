@@ -1,6 +1,6 @@
 import schema from '../migrations/0003_close_sync.sql';
 import {verifiedDaily} from './market';
-import {mergeCloseWindow,afterBuyWindow} from './close-validation';
+import {mergeCloseWindow,collectionWindow} from './close-validation';
 import {closeSyncSchedule,planCloseSync,syncDay,selectCloseBatch} from './close-sync-plan';
 import type {Env,RecordRow} from './types';
 const ready=new WeakMap<object,Promise<void>>();
@@ -12,7 +12,7 @@ export function ensureCloseSyncSchema(env:Env){
 export async function closeSyncStatus(env:Env){
   await ensureCloseSyncSchema(env);
   const latest=await env.DB.prepare('SELECT * FROM close_sync_runs ORDER BY started_at DESC LIMIT 1').first();
-  return {schedule:closeSyncSchedule,latest,warning:'北交所日历未核实，暂不自动计算或补齐其10日窗口。缺失报价不自动认定为停牌。'};
+  return {schedule:closeSyncSchedule,latest,warning:'北交所D0可凭当日双源报价采集；其后十日日历未核实，暂不计算或补齐D+n。缺失报价不自动认定为停牌。'};
 }
 export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDaily=verifiedDaily){
   await ensureCloseSyncSchema(env);
@@ -40,12 +40,12 @@ export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDa
         const absent=[...group.dates].filter(date=>!available.has(date));
         if(absent.length)error='缺少有效收盘报价：'+absent.join('、');
         for(const r of group.records){
-          const missing=afterBuyWindow(r).filter(d=>d<=day.date&&!available.has(d));
+          const missing=collectionWindow(r).filter(d=>d<=day.date&&!available.has(d));
           if(missing.length)error='缺少交叉验证通过的收盘价：'+missing.join('、');
           const saved=mergeCloseWindow(r,quote);
           const recordError=missing.length?'自动同步：缺少交叉验证通过的收盘价 '+missing.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
           if(recordError)error=recordError;
-          await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name,JSON.stringify(saved),quote.fetchedAt,recordError,r.id,r.revision).run();
+          await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name||r.name,JSON.stringify(saved),quote.fetchedAt,recordError,r.id,r.revision).run();
         }
       }else{
         // Preserve both the last valid quote and fetch timestamp on transport failures.

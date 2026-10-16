@@ -29,7 +29,7 @@ test('tracking uses market calendar, D0 separate; unverified corporate actions b
   const r={buy_time:'2026-10-15T09:47:00',symbol:'300111.SZ',actual_price:10,reference_price:null,checked_through:'2026-10-16',market_data:JSON.stringify({bars:[{date:'2026-10-15',close:10.2},{date:'2026-10-16',close:10.5}]})} as RecordRow;
   const t=track(r,new Date('2026-10-16T09:00:00Z'));assert.equal(t.window[0].date,'2026-10-15');assert.equal(t.window[1].date,'2026-10-16');assert.equal(t.window[2].date,'2026-10-19');assert.ok(Math.abs(t.window[1].value!-5)<1e-10);
   assert.equal(track({...r,checked_through:null},new Date('2026-10-16T09:00:00Z')).window[0].value,null);
-  assert.equal(track({...r,symbol:'920162.BJ'}).window[0].value,null);
+  assert.ok(Math.abs(track({...r,symbol:'920162.BJ'}).window[0].value!-2)<1e-10);assert.equal(track({...r,symbol:'920162.BJ'}).window[1].value,null);
   assert.equal(track(r,new Date('2026-10-16T03:00:00Z')).window[1].value,null);
 });
 test('PBKDF2 hashes from setup script match Worker verification',async()=>{

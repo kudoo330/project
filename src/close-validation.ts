@@ -2,9 +2,9 @@ import type {Bar,RecordRow} from './types';
 import {corporateAdjustment,type CorporateSource,type Adjustment} from './corporate-actions';
 import {afterBuyWindow,collectionWindow} from './observation-window';
 export {afterBuyWindow,collectionWindow};
-export function compareCloses(primary:Bar[],secondary:Bar[],checkedAt:string){
+export function compareCloses(primary:Bar[],secondary:Bar[],checkedAt:string,sources=['东方财富','腾讯']){
   const other=new Map(secondary.map(b=>[b.date,b])),bars:Bar[]=[],validation=[];
-  for(const b of primary){const second=other.get(b.date),matched=Boolean(second&&b.close>0&&second.close>0&&Math.abs(b.close-second.close)<1e-8);validation.push({date:b.date,status:matched?'matched':second?'mismatch':'secondary_missing',primaryClose:b.close,secondaryClose:second?.close??null});if(matched)bars.push({...b,crossCheck:{status:'matched',sources:['东方财富','腾讯'],checkedAt}});}
+  for(const b of primary){const second=other.get(b.date),matched=Boolean(second&&b.close>0&&second.close>0&&Math.abs(b.close-second.close)<1e-8);validation.push({date:b.date,status:matched?'matched':second?'mismatch':'secondary_missing',primaryClose:b.close,secondaryClose:second?.close??null});if(matched)bars.push({...b,crossCheck:{status:'matched',sources,checkedAt}});}
   return {bars,validation};
 }
 export function mergeCloseWindow<T extends {bars:Bar[];validation:{date:string;status:string}[];fetchedAt?:string;corporateSource?:CorporateSource}>(record:RecordRow,quote:T){

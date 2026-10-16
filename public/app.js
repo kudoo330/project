@@ -7,7 +7,7 @@ const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefine
 const fmt=n=>n===null||n===undefined?'—':Number(n).toFixed(2),pct=n=>n===null||n===undefined?'—':`${n>0?'+':''}${fmt(n)}%`,today=()=>new Date(Date.now()+8*3600000).toISOString().slice(0,10);
 const num=n=>n===null||n===undefined?'':String(n);
 function quoteEvidence(r){try{return JSON.parse(r.market_data??'{}');}catch{return {};}}
-function crossCheckText(r){const v=quoteEvidence(r).validation;if(!v)return '尚未完成逐日交叉核对';return `已通过 ${v.filter(x=>x.status==='matched').length} 个交易日；待核对 ${v.filter(x=>x.status!=='matched').length} 个交易日（D+1至D+10）`;}
+function crossCheckText(r){const v=quoteEvidence(r).validation;if(!v)return '尚未完成逐日交叉核对';return `已通过 ${v.filter(x=>x.status==='matched').length} 个交易日；待核对 ${v.filter(x=>x.status!=='matched').length} 个交易日（D0至D+10）`;}
 // Do not open record/strategy forms before their server-backed options are loaded.
 for(const id of ['add','empty-add','import','new-strategy'])$('#'+id).disabled=true;
 let messageTimer;
