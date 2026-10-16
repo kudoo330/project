@@ -6,6 +6,7 @@ import type { Env, RecordRow } from './types';
 import {listStrategies,ensureAnalysisSchema} from './strategy-analysis';
 import {analysisSummary} from './analysis-summary';
 import {normalizeAnalysisRule} from '../public/analysis-scope.js';
+import {runCloseSync,closeSyncStatus} from './close-sync';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
 const text=(s:unknown,max=2000)=>String(s??'').slice(0,max);
@@ -32,6 +33,7 @@ async function api(request:Request,env:Env,url:URL) {
   const user=await identity(request,env);
   if(!user)return json({error:'请先登录'},401);
   if(url.pathname==='/api/me')return json(user);
+  if(url.pathname==='/api/close-sync'&&request.method==='GET')return json(await closeSyncStatus(env));
   if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
   if(url.pathname==='/api/strategies') {
@@ -167,6 +169,9 @@ async function handle(request:Request,env:Env) {
   return env.ASSETS.fetch(request);
 }
 export default {
+  async scheduled(event:ScheduledController,env:Env,ctx:ExecutionContext){
+    ctx.waitUntil(runCloseSync(env,new Date(event.scheduledTime)));
+  },
   async fetch(request:Request,env:Env) {
     let response:Response;
     try{response=await handle(request,env);}catch(e){

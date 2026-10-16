@@ -12,9 +12,9 @@ async function upstream(url: string) {
   if (j.rc !== 0 || !j.data) throw new Error('供应商无有效证券数据，不能确认代码或市场');
   return j.data;
 }
-export async function daily(env: Env, symbol: string): Promise<QuoteData> {
+export async function daily(env: Env, symbol: string, force=false): Promise<QuoteData> {
   const cacheKey='daily:'+symbol;
-  const cached=await env.DB.prepare('SELECT data FROM market_cache WHERE key=? AND expires_at>?').bind(cacheKey,Date.now()).first<{data:string}>();
+  const cached=force?null:await env.DB.prepare('SELECT data FROM market_cache WHERE key=? AND expires_at>?').bind(cacheKey,Date.now()).first<{data:string}>();
   if(cached)return {...JSON.parse(cached.data),cached:true};
   const [code,exchange]=symbol.split('.');
   const secid=(exchange==='SH'?'1':'0')+'.'+code;

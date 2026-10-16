@@ -1,6 +1,6 @@
 {
   "name": "a-share-tracker",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "check": "tsc --noEmit",
     "test": "node --import tsx --test --test-isolation=none test/*.test.ts",
     "test:browser": "playwright test",
+    "test:scheduler": "node scripts/test-scheduler.mjs",
     "build": "wrangler deploy --dry-run --outdir dist",
     "db:local": "wrangler d1 migrations apply tracker --local",
     "deploy": "node scripts/deploy-web.mjs",
@@ -19,6 +20,8 @@
     "@playwright/test": "^1.64.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.0.0",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261012.0-beta"
   }
 }
