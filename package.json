@@ -1,6 +1,6 @@
 {
   "name": "a-share-tracker",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,7 +14,8 @@
     "deploy": "node scripts/deploy-web.mjs",
     "password": "node scripts/password.mjs",
     "cloudflare:setup": "node scripts/cloudflare-setup.mjs",
-    "test:import": "node scripts/test-reviewed-import.mjs"
+    "test:import": "node scripts/test-reviewed-import.mjs",
+    "test:read-access": "node scripts/test-read-access.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261016.1",

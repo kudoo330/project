@@ -9,6 +9,7 @@ import {analysisSummary} from './analysis-summary';
 import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 import {runCloseSync,closeSyncStatus} from './close-sync';
 import {importReviewed} from './reviewed-import';
+import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
 const text=(s:unknown,max=2000)=>String(s??'').slice(0,max);
@@ -26,6 +27,16 @@ function input(row:any, editing=false) {
   return {strategy_id,symbol,buy_time,original_time:text(row.original_time??row.buy_time,100),name:text(row.name,100),version:text(row.version,80),actual_price:optionalPositive(row.actual_price,'成交价'),shares:optionalPositive(row.shares,'股数'),reason:text(row.reason),tags:text(row.tags,300),notes:text(row.notes)};
 }
 async function api(request:Request,env:Env,url:URL) {
+  if(url.pathname.startsWith('/api/readonly/')){
+    if(request.method!=='GET')return json({error:'此接口只允许读取'},405);
+    if(!await canReadWithToken(env.DB,request))return json({error:'只读密钥缺失、失效或已撤销'},401);
+    if(url.pathname==='/api/readonly/records'){
+      const rows=(await env.DB.prepare('SELECT r.*,s.name AS strategy_name FROM records r JOIN strategies s ON s.id=r.strategy_id ORDER BY buy_time DESC,created_at DESC LIMIT 5000').all<RecordRow>()).results;
+      return json({records:rows.map(r=>({...r,tracking:track(r)})),limit:5000,calendar:calendarInfo});
+    }
+    if(url.pathname==='/api/readonly/close-sync')return json(await closeSyncStatus(env));
+    return json({error:'只读接口不存在'},404);
+  }
   const mutating=!['GET','HEAD'].includes(request.method);
   if(mutating) {
     if(request.headers.get('Origin')!==url.origin)return json({error:'请求来源校验失败'},403);
@@ -38,6 +49,12 @@ async function api(request:Request,env:Env,url:URL) {
   if(url.pathname==='/api/close-sync'&&request.method==='GET')return json(await closeSyncStatus(env));
   if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
+  if(url.pathname==='/api/read-access'){
+    if(user.role!=='admin')return json({error:'仅管理员可管理只读授权'},403);
+    if(request.method==='POST')return json(await generateReadToken(env.DB,user.username));
+    if(request.method==='DELETE'){await revokeReadToken(env.DB);return json({ok:true});}
+    return json({error:'请求方法不支持'},405);
+  }
   if(url.pathname==='/api/import-reviewed'&&request.method==='POST'){
     const result=await importReviewed(env.DB,await body(request,1500000),user);return json(result,result.status??200);
   }

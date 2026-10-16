@@ -14,3 +14,5 @@
 - 必须运行 `npm test`、`npm run check`、`npm run build`；影响交互或权限运行Playwright，记录实际结果。测试数据不写成真实持仓或部署证据。
 - Worker生产网络验证、数据库迁移、授权测试与部署成功是不同证据；未通过不能宣称完成。
 - 主题变量在 `public/tokens.css`，行情适配器在 `src/market.ts`，定价与统计在 `src/domain.ts` / `src/tracking.ts`，权限在 `src/auth.ts`。
+
+- 用户已授权从Codex读取线上记录。使用7天可撤销只读密钥TRACKER_READ_TOKEN，仅通过HTTPS请求头发往project.kudoo330.workers.dev，禁止聊天索取、打印或提交。不得把只读密钥升级为写权限，详见docs/CODEX-READ-ACCESS.md。

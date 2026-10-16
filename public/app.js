@@ -163,3 +163,9 @@ $('#reviewed-file').addEventListener('change',async event=>{
     const result=await send('/api/import-reviewed',{rows,request_id});await load();message(`已保存${result.count}条核验记录${result.replayed?'（重复提交，未重复写入）':''}`);
   }catch(error){message(error.message);}finally{input.value='';}
 });
+
+$('#create-read-token').onclick=async()=>{
+  try{const r=await send('/api/read-access',{});$('#read-token').value=r.token;$('#read-token-expiry').textContent='有效期至 '+new Date(r.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})+'。请填入Codex安全配置，不要发到聊天。';$('#read-token-result').hidden=false;message('只读密钥已生成，旧密钥已失效');}catch(e){message(e.message);}
+};
+$('#copy-read-token').onclick=async()=>{try{await navigator.clipboard.writeText($('#read-token').value);message('密钥已复制，请粘贴到Codex安全配置');}catch{message('复制失败，可选中密钥框手动复制');}};
+$('#revoke-read-token').onclick=async()=>{try{await api('/api/read-access',{method:'DELETE',body:'{}'});$('#read-token').value='';$('#read-token-result').hidden=true;message('只读授权已撤销');}catch(e){message(e.message);}};

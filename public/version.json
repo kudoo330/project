@@ -1,1 +1,1 @@
-{"version": "0.4.1", "features": ["strategy-analysis-scope", "scheduled-close-sync", "cross-validated-ten-closes", "in-window-corporate-adjustment", "reviewed-reference-import", "d0-close-collection"], "date": "2026-10-16"}
+{"version": "0.5.0", "features": ["strategy-analysis-scope", "scheduled-close-sync", "cross-validated-ten-closes", "in-window-corporate-adjustment", "reviewed-reference-import", "d0-close-collection", "scoped-read-access"], "date": "2026-10-16"}

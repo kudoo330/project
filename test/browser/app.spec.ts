@@ -136,3 +136,23 @@ test('reviewed text previews multiple strategies and preserves manual price and 
     for(const r of (await(await c.get('/api/records')).json()).records.filter(r=>r.strategy_name===strategy))await c.delete('/api/records/'+r.id,{data:{revision:r.revision}});await c.dispose();
   }
 });
+test('admin manages scoped read access; token reads records but cannot mutate or authenticate as admin',async({page,request})=>{
+  expect((await request.get('/api/readonly/records')).status()).toBe(401);
+  expect((await request.get('/api/readonly/records?token=unused')).status()).toBe(401);
+  const viewer=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await viewer.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});expect((await viewer.post('/api/read-access',{data:{}})).status()).toBe(403);await viewer.dispose();
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.getByRole('button',{name:'数据与设置'}).click();await page.locator('#create-read-token').click();await expect(page.locator('#read-token')).toHaveValue(/^read_[a-f0-9]{64}$/);
+  const token=await page.locator('#read-token').inputValue(),scoped={'X-Tracker-Read-Token':token};
+  try{
+    const records=await request.get('/api/readonly/records',{headers:scoped});expect(records.status()).toBe(200);expect(records.headers()['cache-control']).toBe('no-store');expect(Array.isArray((await records.json()).records)).toBe(true);
+    expect((await request.get('/api/readonly/close-sync',{headers:scoped})).status()).toBe(200);
+    expect((await request.post('/api/readonly/records',{headers:scoped,data:{}})).status()).toBe(405);
+    expect((await request.post('/api/records',{headers:{...scoped,Origin:origin},data:{}})).status()).toBe(401);
+    expect((await request.get('/api/me',{headers:scoped})).status()).toBe(401);
+    const rotation=page.waitForResponse(r=>r.url().endsWith('/api/read-access')&&r.request().method()==='POST');await page.locator('#create-read-token').click();await rotation;
+    expect((await request.get('/api/readonly/records',{headers:scoped})).status()).toBe(401);
+    const newToken=await page.locator('#read-token').inputValue();expect((await request.get('/api/readonly/records',{headers:{'X-Tracker-Read-Token':newToken}})).status()).toBe(200);
+    const revocation=page.waitForResponse(r=>r.url().endsWith('/api/read-access')&&r.request().method()==='DELETE');await page.locator('#revoke-read-token').click();await revocation;
+    expect((await request.get('/api/readonly/records',{headers:{'X-Tracker-Read-Token':newToken}})).status()).toBe(401);await expect(page.locator('#read-token-result')).toBeHidden();
+  }finally{await page.locator('#revoke-read-token').click();}
+});
