@@ -7,7 +7,7 @@ export interface Env {
   VIEWER_PASSWORD_HASH?: string;
 }
 export interface Identity { username: string; role: 'admin' | 'viewer' }
-export interface Bar { date: string; open: number; high: number; low: number; close: number; volume: number }
+export interface Bar { date: string; open: number; high: number; low: number; close: number; volume: number; crossCheck?: {status:'matched';sources:string[];checkedAt:string} }
 export interface RecordRow {
   id: string; batch_id: string; strategy_id: string; strategy_name?: string; version: string;
   symbol: string; name: string; original_time: string; buy_time: string;

@@ -4,7 +4,7 @@ import { change, closedBars, extrema, indicators, shanghaiNow } from './domain';
 export const calendarInfo={source:'新浪独立沪深交易日历，经AKShare读取',fetchedAt:'2026-10-16',start:dates[0],end:dates.at(-1),officialVerified:false};
 export function track(record:RecordRow, now=new Date()) {
   const date=record.buy_time.slice(0,10),index=dates.indexOf(date),local=shanghaiNow(now);
-  let data: {bars?:Bar[]}={};try{data=JSON.parse(record.market_data??'{}');}catch{}
+  let data: {bars?:Bar[];validation?:{date:string;status:string}[]}={};try{data=JSON.parse(record.market_data??'{}');}catch{}
   const bars=closedBars(data.bars??[],now),byDate=new Map(bars.map(b=>[b.date,b]));
   const base=record.actual_price??record.reference_price;
   const blocked=record.symbol.endsWith('.BJ')?'北交所日历尚未核实':index<0?'买入日不在已加载交易日历':'公司行动尚未自动核实，以下仅为未复权价格观察';
@@ -13,9 +13,10 @@ export function track(record:RecordRow, now=new Date()) {
   const window=Array.from({length:11},(_,n)=>{
     const day=calendarUsable?dates[index+n]??null:null;
     const b=day?byDate.get(day):undefined;
+    const conflict=day?data.validation?.some(v=>v.date===day&&v.status!=='matched'):false;
     const checked=day!==null&&record.checked_through!==null&&day<=record.checked_through;
     const state=!day?'日历待核实':day>local.slice(0,10)?'待更新':day===local.slice(0,10)&&local.slice(11)<'16:00:00'?'盘中，未确认收盘':!b?'缺少有效报价':base===null?'待补价':!checked?'公司行动口径待核对':'有效价格观察';
-    return {n,date:day,close:b?.close??null,value:b&&checked?change(b.close,base):null,state};
+    return {n,date:day,close:b?.close??null,value:b&&checked&&!conflict?change(b.close,base):null,state:conflict?'收盘价交叉核对待确认':state};
   });
   const complete=window.every(w=>w.value!==null);
   const ended=window[10].date!==null&&window[10].date<local.slice(0,10);

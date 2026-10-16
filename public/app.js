@@ -5,6 +5,8 @@ const $=s=>document.querySelector(s),state={user:null,records:[],strategies:[],s
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const fmt=n=>n===null||n===undefined?'—':Number(n).toFixed(2),pct=n=>n===null||n===undefined?'—':`${n>0?'+':''}${fmt(n)}%`,today=()=>new Date(Date.now()+8*3600000).toISOString().slice(0,10);
 const num=n=>n===null||n===undefined?'':String(n);
+function quoteEvidence(r){try{return JSON.parse(r.market_data??'{}');}catch{return {};}}
+function crossCheckText(r){const v=quoteEvidence(r).validation;if(!v)return '尚未完成逐日交叉核对';return `已通过 ${v.filter(x=>x.status==='matched').length} 个交易日；待核对 ${v.filter(x=>x.status!=='matched').length} 个交易日（D+1至D+10）`;}
 // Do not open record/strategy forms before their server-backed options are loaded.
 for(const id of ['add','empty-add','import','new-strategy'])$('#'+id).disabled=true;
 let messageTimer;
@@ -54,7 +56,7 @@ $('#record-form').addEventListener('submit',async e=>{
 });
 async function detail(id){
   const r=await api('/api/records/'+id),c=$('#detail-content');c.replaceChildren();const dl=el('dl');
-  for(const [k,v]of [['股票',r.symbol+' '+r.name],['买入时点',r.buy_time.replace('T',' ')+' Asia/Shanghai'],['策略',state.strategies.find(s=>s.id===r.strategy_id)?.name],['价格基准',fmt(r.tracking.base)+' · '+r.tracking.baseType],['提交批次',r.batch_id],['理由',r.reason||'—'],['备注',r.notes||'—'],['数据来源','东方财富，不复权；成交量：手'],['最近获取',r.fetched_at?new Date(r.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'尚未获取'],['口径核对至',r.checked_through||'尚未核对'],['状态',r.error||r.tracking.warning]])dl.append(el('dt',k),el('dd',v));c.append(dl);
+  for(const [k,v]of [['股票',r.symbol+' '+r.name],['买入时点',r.buy_time.replace('T',' ')+' Asia/Shanghai'],['策略',state.strategies.find(s=>s.id===r.strategy_id)?.name],['价格基准',fmt(r.tracking.base)+' · '+r.tracking.baseType],['提交批次',r.batch_id],['理由',r.reason||'—'],['备注',r.notes||'—'],['数据来源',quoteEvidence(r).provider||'尚未取得行情'],['收盘价交叉核对',crossCheckText(r)],['最近获取',r.fetched_at?new Date(r.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'尚未获取'],['口径核对至',r.checked_through||'尚未核对'],['状态',r.error||r.tracking.warning]])dl.append(el('dt',k),el('dd',v));c.append(dl);
   const chartContainer=el('div');c.append(chartContainer);chart(chartContainer,[{name:'累计价格表现（%）',values:r.tracking.window.map(w=>w.value)}],r.tracking.window.map(w=>w.n?'D+'+w.n:'D0'));
   const table=el('table'),head=el('tr');['观察日','日期','收盘价','累计涨幅','状态'].forEach(s=>head.append(el('th',s)));table.append(head);r.tracking.window.forEach(w=>{const tr=el('tr');[w.n?'D+'+w.n:'D0',w.date||'—',fmt(w.close),pct(w.value),w.state].forEach(s=>tr.append(el('td',s)));table.append(tr);});const wrap=el('div',undefined,'table-wrap');wrap.append(table);c.append(wrap);
   const ind=r.tracking.indicators;c.append(el('h3','近期完整日线指标'));c.append(el('p',`MA5 ${fmt(ind.ma5)} · MA10 ${fmt(ind.ma10)} · MA20 ${fmt(ind.ma20)} · 成交量 / 前5日均量 ${fmt(ind.volumeRatio)} · 截至 ${ind.asOf||'无数据'}`,'fine'));
@@ -73,7 +75,7 @@ const detailReload=id=>detail(id);
 async function refreshRecords(rows,automatic=false){
   if(!rows.length)return;const b=$('#refresh');b.disabled=true;let ok=0,failed=0;
   try{const selected=automatic?rows.slice(0,20):rows;
-    for(let i=0;i<selected.length;i+=20){const d=await send('/api/refresh',{ids:selected.slice(i,i+20).map(r=>r.id)});ok+=d.results.filter(r=>r.ok).length;failed+=d.results.filter(r=>!r.ok).length;}
+    for(let i=0;i<selected.length;i+=8){const d=await send('/api/refresh',{ids:selected.slice(i,i+8).map(r=>r.id)});ok+=d.results.filter(r=>r.ok).length;failed+=d.results.filter(r=>!r.ok).length;}
     await load();message(`行情更新：${ok}条成功，${failed}条失败。${automatic&&rows.length>20?'自动更新仅处理最近20条，其余请手动刷新。':''}`);
   }catch(e){message('刷新失败，已保存记录保持不变：'+e.message);}finally{b.disabled=false;}
 }

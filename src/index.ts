@@ -1,6 +1,7 @@
 import { digest, identity, login, logout } from './auth';
 import { csvCell, normalizeSymbol, normalizeTime, optionalPositive, shanghaiNow } from './domain';
-import { daily, minute } from './market';
+import { daily, minute, verifiedDaily } from './market';
+import {mergeCloseWindow,afterBuyWindow} from './close-validation';
 import { calendarInfo, track } from './tracking';
 import type { Env, RecordRow } from './types';
 import {listStrategies,ensureAnalysisSchema} from './strategy-analysis';
@@ -125,14 +126,20 @@ async function api(request:Request,env:Env,url:URL) {
     }
   }
   if(url.pathname==='/api/refresh'&&request.method==='POST') {
-    const b=await body(request);if(!Array.isArray(b.ids)||b.ids.length>20)throw new Error('每次最多刷新20条记录');
+    const b=await body(request);if(!Array.isArray(b.ids)||b.ids.length>8)throw new Error('每批最多刷新8条记录，页面会自动分批');
     const results=[];
+    const quotes=new Map<string,ReturnType<typeof verifiedDaily>>();
     for(const id of [...new Set(b.ids)] as string[]) {
       const r=await getRecord(env,id);if(!r)continue;
       try {
-        const d=await daily(env,r.symbol);
-        await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=NULL WHERE id=? AND revision=?').bind(d.name,JSON.stringify(d),d.fetchedAt,id,r.revision).run();
-        results.push({id,ok:true,cached:d.cached});
+        if(!quotes.has(r.symbol))quotes.set(r.symbol,verifiedDaily(env,r.symbol));
+        const d=await quotes.get(r.symbol)!,saved=mergeCloseWindow(r,d),conflicts=saved.validation.filter(v=>v.status!=='matched');
+        const local=shanghaiNow(),due=afterBuyWindow(r).filter(date=>date<local.slice(0,10)||date===local.slice(0,10)&&local.slice(11)>='16:05:00');
+        const missing=due.filter(date=>!d.bars.some(b=>b.date===date));
+        const pending=[...new Set([...conflicts.map(v=>v.date),...missing])];
+        const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):null;
+        await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(d.name,JSON.stringify(saved),d.fetchedAt,error,id,r.revision).run();
+        results.push({id,ok:!error,cached:d.cached,error});
       } catch(e) {
         const error=e instanceof Error?e.message:'行情请求失败';
         await env.DB.prepare('UPDATE records SET error=? WHERE id=? AND revision=?').bind(error,id,r.revision).run();results.push({id,ok:false,error});

@@ -1,6 +1,7 @@
 import schema from '../migrations/0003_close_sync.sql';
-import {daily} from './market';
-import {closeSyncSchedule,planCloseSync,storedBars,syncDay,closeTargets,selectCloseBatch} from './close-sync-plan';
+import {verifiedDaily} from './market';
+import {mergeCloseWindow,afterBuyWindow} from './close-validation';
+import {closeSyncSchedule,planCloseSync,syncDay,selectCloseBatch} from './close-sync-plan';
 import type {Env,RecordRow} from './types';
 const ready=new WeakMap<object,Promise<void>>();
 export function ensureCloseSyncSchema(env:Env){
@@ -13,7 +14,7 @@ export async function closeSyncStatus(env:Env){
   const latest=await env.DB.prepare('SELECT * FROM close_sync_runs ORDER BY started_at DESC LIMIT 1').first();
   return {schedule:closeSyncSchedule,latest,warning:'北交所日历未核实，暂不自动计算或补齐其10日窗口。缺失报价不自动认定为停牌。'};
 }
-export async function runCloseSync(env:Env,now=new Date(),load=daily){
+export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDaily=verifiedDaily){
   await ensureCloseSyncSchema(env);
   const day=syncDay(now),id=crypto.randomUUID(),started=now.toISOString();
   const acquired=await env.DB.prepare(`INSERT INTO close_sync_runs(id,trade_date,started_at,status)
@@ -39,9 +40,9 @@ export async function runCloseSync(env:Env,now=new Date(),load=daily){
         const absent=[...group.dates].filter(date=>!available.has(date));
         if(absent.length)error='缺少有效收盘报价：'+absent.join('、');
         for(const r of group.records){
-          const merged=new Map(storedBars(r).map(b=>[b.date,b]));for(const [date,bar]of available)merged.set(date,bar);
-          const missing=closeTargets(r,day.date).filter(d=>!available.has(d));
-          await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name,JSON.stringify({...quote,bars:[...merged.values()].sort((a,b)=>a.date.localeCompare(b.date))}),quote.fetchedAt,missing.length?'自动同步：缺少有效收盘报价 '+missing.join('、'):null,r.id,r.revision).run();
+          const missing=afterBuyWindow(r).filter(d=>d<=day.date&&!available.has(d));
+          if(missing.length)error='缺少交叉验证通过的收盘价：'+missing.join('、');
+          await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name,JSON.stringify(mergeCloseWindow(r,quote)),quote.fetchedAt,missing.length?'自动同步：缺少交叉验证通过的收盘价 '+missing.join('、'):null,r.id,r.revision).run();
         }
       }else{
         // Preserve both the last valid quote and fetch timestamp on transport failures.

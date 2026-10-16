@@ -1,5 +1,6 @@
 import type { Bar, Env } from './types';
 import { closedBars } from './domain';
+import {compareCloses} from './close-validation';
 export const PROVIDER = '东方财富（不复权；成交量原始单位：手）';
 const FIELD = 'fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58';
 type QuoteData = { code: string; name: string; bars: Bar[]; fetchedAt: string; cached: boolean; provider: string; adjustment: string };
@@ -46,3 +47,16 @@ export async function minute(env:Env,symbol:string,date:string) {
   return result;
 }
 export {closedBars};
+export async function verifiedDaily(env:Env,symbol:string,force=false){
+  const primary=await daily(env,symbol,force),[code,exchange]=symbol.split('.');
+  const key=exchange.toLowerCase()+code;
+  const param=new URLSearchParams({param:key+',day,,,600,'});
+  let response:Response;
+  try{response=await fetch('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?'+param,{signal:AbortSignal.timeout(12000)});}catch{throw new Error('腾讯交叉来源暂不可达，收盘价待核对；旧数据保留。');}
+  if(!response.ok)throw new Error('腾讯交叉来源HTTP '+response.status+'，收盘价待核对');
+  const json=await response.json() as {code:number;data?:Record<string,{day?:string[][]}>};
+  if(json.code!==0)throw new Error('腾讯交叉来源无有效数据，收盘价待核对');
+  const secondary=(json.data?.[key]?.day??[]).map(v=>({date:v[0],open:Number(v[1]),close:Number(v[2]),high:Number(v[3]),low:Number(v[4]),volume:Number(v[5])})).filter(b=>Number.isFinite(b.close)&&b.close>0);
+  const checkedAt=new Date().toISOString();
+  return {...primary,...compareCloses(closedBars(primary.bars),closedBars(secondary),checkedAt),provider:'东方财富收盘价 / 腾讯不复权日线交叉核对',checkedAt};
+}
