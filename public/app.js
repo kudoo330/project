@@ -1,5 +1,6 @@
 import {parseCSV} from './csv.js';
 import {sortRecords} from './record-sort.js';
+import {hasPriceGap} from './price-gaps.js';
 import {parseReviewedPaste} from './reviewed-paste.js';
 import {chart} from './chart.js';
 import {normalizeAnalysisRule,describeAnalysisRule,selectAnalysisSamples} from './analysis-scope.js';
@@ -27,7 +28,7 @@ function renderCloseSync(data){const target=$('#close-sync-status');if(!target)r
 function filtered(){const strategy=$('#filter-strategy').value,q=$('#filter-search').value.toLowerCase(),start=$('#filter-start').value,end=$('#filter-end').value,status=$('#filter-status').value;return sortRecords(state.records.filter(r=>(!strategy||r.strategy_id===strategy)&&(!q||[r.symbol,r.name,r.tags,r.notes,r.batch_id,r.version].join(' ').toLowerCase().includes(q))&&(!start||r.buy_time.slice(0,10)>=start)&&(!end||r.buy_time.slice(0,10)<=end)&&(!status||r.tracking.status===status)),$('#record-sort-field').value,$('#record-sort-direction').value);}
 function render(){
   const rows=filtered(),stats=$('#stats');stats.replaceChildren();
-  const values=[['策略样本数',rows.length,`${new Set(rows.map(r=>r.symbol)).size} 只不重复股票`],['今日新增',rows.filter(r=>new Date(new Date(r.created_at).getTime()+8*3600000).toISOString().slice(0,10)===today()).length,'当前筛选范围'],['10日观察完成',rows.filter(r=>r.tracking.progress===10).length,'D+1至D+10口径已核对'],['待补价 / 异常',rows.filter(r=>r.tracking.base===null||r.error||r.tracking.status==='日历待核实').length,'缺失值不记为0']];
+  const values=[['策略样本数',rows.length,`${new Set(rows.map(r=>r.symbol)).size} 只不重复股票`],['今日新增',rows.filter(r=>new Date(new Date(r.created_at).getTime()+8*3600000).toISOString().slice(0,10)===today()).length,'当前筛选范围'],['10日观察完成',rows.filter(r=>r.tracking.progress===10).length,'D+1至D+10口径已核对'],['待补价',rows.filter(r=>hasPriceGap(r)).length,'仅统计已到更新时间的价格空缺']];
   values.forEach(([title,value,sub])=>{const card=el('div',undefined,'stat');card.append(el('span',title),el('strong',value),el('small',sub));stats.append(card);});
   $('#record-count').textContent=`${rows.length} 个策略样本 · ${new Set(rows.map(r=>r.symbol)).size} 只股票`;
   const headers=['策略 / 版本','股票','买入时间','价格基准',...Array.from({length:11},(_,i)=>i?'D+'+i:'D0'),'观察状态','最大上涨 / 下跌'];

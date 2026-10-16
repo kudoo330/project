@@ -197,3 +197,12 @@ test('tracking sort dropdowns order buy times and D0 through D10; missing return
  await page.locator('#record-sort-field').selectOption('d10');await page.locator('#record-sort-direction').selectOption('asc');await expect.poll(codes).toEqual(['300114.SZ','300111.SZ','300113.SZ','300112.SZ']);
  await page.locator('#filter-search').fill('300111');await expect.poll(codes).toEqual(['300111.SZ']);
 });
+test('pending-price card counts price gaps only, ignoring refresh errors, calendar warnings and future closes',async({page})=>{
+ const day=new Date(Date.now()+8*3600000-86400000).toISOString().slice(0,10),future='2099-01-01';
+ const record=(id,base,close)=>({id,symbol:'300111.SZ',name:'FIXTURE',strategy_id:'twenty-minute',strategy_name:'TEST',buy_time:day+'T09:40:00',created_at:day+'T01:00:00Z',tags:'',notes:'',version:'',batch_id:'test',reference_price:base,error:'Test refresh failure',tracking:{base,progress:0,status:'日历待核实',baseType:'TEST',max:null,min:null,window:[{date:day,n:0,rawClose:close,close,value:close===null?null:0,state:'TEST'},...Array.from({length:10},(_,n)=>({date:future,n:n+1,close:null,value:null,state:'待更新'}))]}});
+ const records=[record('complete-with-error',10,10),record('missing-base',null,10),record('missing-close',10,null)];
+ await page.route('**/api/records',route=>route.fulfill({json:{records}}));
+ await page.goto('/');await page.getByLabel('用户名').fill('viewer');await page.getByLabel('密码',{exact:true}).fill('local-test-viewer-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+ const card=page.locator('#stats .stat').filter({has:page.locator('span',{hasText:/^待补价$/})});await expect(card.locator('strong')).toHaveText('2');
+ await page.locator('#filter-search').fill('FIXTURE');await expect(card.locator('strong')).toHaveText('2');
+});
