@@ -172,3 +172,17 @@ test('Codex password header uses normal admin login, Origin checks and sessions'
   }finally{await request.post('/api/logout',{headers,data:{}});}
   expect((await request.get('/api/records')).status()).toBe(401);
 });
+test('only empty strategies can be deleted; analysis rules clean up and records remain protected',async()=>{
+ const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});
+ const name='LOCAL-DELETE-'+crypto.randomUUID();await c.post('/api/strategies',{data:{name}});const strategy=(await(await c.get('/api/strategies')).json()).find(s=>s.name===name);
+ let record;
+ try{
+  await c.patch('/api/strategies/'+strategy.id+'/analysis-rule',{data:{revision:0,rule:{first_n:10,before_time:null}}});
+  const stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19);await c.post('/api/records',{data:{request_id:crypto.randomUUID(),rows:[{strategy_id:strategy.id,symbol:'300111.SZ',buy_time:stamp}]}});
+  record=(await(await c.get('/api/records')).json()).records.find(r=>r.strategy_id===strategy.id);expect(record).toBeTruthy();
+  expect((await c.delete('/api/strategies/'+strategy.id,{data:{}})).status()).toBe(409);expect((await c.get('/api/records/'+record.id)).status()).toBe(200);
+  await c.delete('/api/records/'+record.id,{data:{revision:record.revision}});record=null;
+  expect((await c.delete('/api/strategies/'+strategy.id,{data:{}})).status()).toBe(200);expect((await(await c.get('/api/strategies')).json()).some(s=>s.id===strategy.id)).toBe(false);
+  expect((await c.delete('/api/strategies/'+strategy.id,{data:{}})).status()).toBe(404);
+ }finally{if(record)await c.delete('/api/records/'+record.id,{data:{revision:record.revision}});await c.delete('/api/strategies/'+strategy.id,{data:{}});await c.dispose();}
+});

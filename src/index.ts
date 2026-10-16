@@ -79,6 +79,17 @@ async function api(request:Request,env:Env,url:URL) {
     return saved?json({ok:true,rule,revision:saved.revision}):json({error:'分析规则已被修改，请刷新后重试'},409);
   }
   const strategyMatch=url.pathname.match(/^\/api\/strategies\/([\w-]+)$/);
+  if(strategyMatch&&request.method==='DELETE') {
+    await ensureAnalysisSchema(env);
+    const old=await env.DB.prepare('SELECT * FROM strategies WHERE id=?').bind(strategyMatch[1]).first();
+    if(!old)return json({error:'策略不存在'},404);
+    const result=await env.DB.batch([
+      env.DB.prepare('DELETE FROM strategy_analysis_rules WHERE strategy_id=? AND NOT EXISTS(SELECT 1 FROM records WHERE strategy_id=?)').bind(strategyMatch[1],strategyMatch[1]),
+      env.DB.prepare('DELETE FROM strategies WHERE id=? AND NOT EXISTS(SELECT 1 FROM records WHERE strategy_id=?)').bind(strategyMatch[1],strategyMatch[1]),
+      env.DB.prepare('INSERT INTO audit(id,record_id,actor,action,previous_value,created_at) SELECT ?,?,?,?,?,? WHERE changes()>0').bind(crypto.randomUUID(),'strategy:'+strategyMatch[1],user.username,'delete-empty-strategy',JSON.stringify(old),now())
+    ]);
+    return result[1].meta.changes?json({ok:true}):json({error:'策略存在买入记录，不能删除；可使用归档'},409);
+  }
   if(strategyMatch&&request.method==='PATCH') {
     const b=await body(request);const old=await env.DB.prepare('SELECT name,archived FROM strategies WHERE id=?').bind(strategyMatch[1]).first<{name:string;archived:number}>();
     if(!old)return json({error:'策略不存在'},404);
