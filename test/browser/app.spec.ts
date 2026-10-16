@@ -1,7 +1,17 @@
 import {test,expect,request as makeRequest} from '@playwright/test';
+import {pbkdf2Sync} from 'node:crypto';
 const origin='http://127.0.0.1:8787';
 const headers={Origin:origin};
 const prefix='LOCAL-VERIFICATION-';
+test('password helper matches server format and sends no password requests',async({page})=>{
+  const writes:string[]=[];page.on('request',r=>{if(r.method()!=='GET')writes.push(r.url());});
+  await page.goto('/password-tool');
+  await page.locator('[name=password]').fill('local-test-new-password');await page.locator('[name=confirm]').fill('local-test-new-password');await page.getByRole('button',{name:'生成哈希'}).click();
+  await expect(page.locator('#password-hash')).toHaveValue(/^pbkdf2\$100000\$[a-f0-9]{32}\$[a-f0-9]{64}$/);
+  const value=await page.locator('#password-hash').inputValue(),[,rounds,salt,hash]=value.split('$');
+  expect(pbkdf2Sync('local-test-new-password',salt,Number(rounds),32,'sha256').toString('hex')).toBe(hash);
+  expect(await page.locator('[name=password]').inputValue()).toBe('');expect(writes).toEqual([]);
+});
 test('unauthenticated pages and APIs cannot expose records',async({request})=>{
   expect((await request.get('/api/records')).status()).toBe(401);
   expect((await request.get('/api/export')).status()).toBe(401);
