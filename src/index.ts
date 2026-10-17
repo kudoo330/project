@@ -142,11 +142,18 @@ async function api(request:Request,env:Env,url:URL) {
       const v=input(candidate,true);
       if(!await env.DB.prepare('SELECT id FROM strategies WHERE id=?').bind(v.strategy_id).first())throw new Error('策略不存在');
       const changed=v.buy_time!==r.buy_time||v.symbol!==r.symbol;
+      const override=Object.hasOwn(b,'reference_price');
+      if(override&&changed)throw new Error('请分别修改股票/时间与买入参考价');
+      const reference=override?optionalPositive(b.reference_price,'参考价'):r.reference_price;
+      const referenceReason=text(b.reference_reason,2000).trim();
+      if(override&&!referenceReason)throw new Error('修改参考价必须填写依据');
+      const evidence=override?JSON.stringify({provider:'用户手动提供',kind:'manual_override',value:reference,reason:referenceReason,previous_reference_price:r.reference_price,previous_evidence:r.reference_evidence,updated_by:user.username,updated_at:now()}):r.reference_evidence;
+
       const checked=b.checked_through===undefined?r.checked_through:b.checked_through||null;
       if(checked!==null&&!/^\d{4}-\d{2}-\d{2}$/.test(checked))throw new Error('核对日期格式错误');
       if(checked!==null&&(checked>shanghaiNow().slice(0,10)||checked<v.buy_time.slice(0,10)))throw new Error('核对范围必须在买入日期至今天之间');
       const results=await env.DB.batch([
-        env.DB.prepare(`UPDATE records SET strategy_id=?,symbol=?,buy_time=?,original_time=?,name=?,version=?,actual_price=?,shares=?,reason=?,tags=?,notes=?,reference_price=?,reference_evidence=?,market_data=?,fetched_at=?,checked_through=?,error=NULL,revision=revision+1,updated_at=? WHERE id=? AND revision=?`).bind(v.strategy_id,v.symbol,v.buy_time,v.original_time,v.name,v.version,v.actual_price,v.shares,v.reason,v.tags,v.notes,changed?null:r.reference_price,changed?null:r.reference_evidence,changed?null:r.market_data,changed?null:r.fetched_at,changed?null:checked,now(),r.id,r.revision),
+        env.DB.prepare(`UPDATE records SET strategy_id=?,symbol=?,buy_time=?,original_time=?,name=?,version=?,actual_price=?,shares=?,reason=?,tags=?,notes=?,reference_price=?,reference_evidence=?,market_data=?,fetched_at=?,checked_through=?,error=NULL,revision=revision+1,updated_at=? WHERE id=? AND revision=?`).bind(v.strategy_id,v.symbol,v.buy_time,v.original_time,v.name,v.version,v.actual_price,v.shares,v.reason,v.tags,v.notes,changed?null:reference,changed?null:evidence,changed?null:r.market_data,changed?null:r.fetched_at,changed?null:checked,now(),r.id,r.revision),
         env.DB.prepare('INSERT INTO audit(id,record_id,actor,action,previous_value,created_at) SELECT ?,?,?,?,?,? WHERE changes()>0').bind(crypto.randomUUID(),r.id,user.username,'update',JSON.stringify(r),now())
       ]);
       return results[0].meta.changes?json({ok:true}):json({error:'记录已被修改，请刷新'},409);

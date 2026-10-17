@@ -206,3 +206,15 @@ test('pending-price card counts price gaps only, ignoring refresh errors, calend
  const card=page.locator('#stats .stat').filter({has:page.locator('span',{hasText:/^待补价$/})});await expect(card.locator('strong')).toHaveText('2');
  await page.locator('#filter-search').fill('FIXTURE');await expect(card.locator('strong')).toHaveText('2');
 });
+test('manual reference correction preserves close data and actual price, requires reason and revision',async()=>{
+ const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});
+ const stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19),notes='LOCAL-REFERENCE-'+crypto.randomUUID();
+ await c.post('/api/import-reviewed',{data:{request_id:crypto.randomUUID(),rows:[{strategy:'LOCAL-REFERENCE-TEST',symbol:'600668.SH',buy_time:stamp,reference_price:8.79,reference_evidence:{provider:'synthetic original'},notes}]}});
+ let row=(await(await c.get('/api/records')).json()).records.find(r=>r.notes===notes);
+ try{
+  expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:8.45}})).status()).toBe(400);
+  expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:8.45,reference_reason:'User confirmed single-record correction'}})).status()).toBe(200);
+  const saved=await(await c.get('/api/records/'+row.id)).json();expect(saved.reference_price).toBe(8.45);expect(saved.actual_price).toBeNull();expect(saved.market_data).toBe(row.market_data);expect(saved.original_time).toBe(row.original_time);const evidence=JSON.parse(saved.reference_evidence);expect(evidence.previous_reference_price).toBe(8.79);expect(evidence.reason).toContain('User confirmed');
+  expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:9,reference_reason:'stale'}})).status()).toBe(409);row=saved;
+ }finally{await c.delete('/api/records/'+row.id,{data:{revision:row.revision}});await c.dispose();}
+});
