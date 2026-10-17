@@ -7,6 +7,7 @@ export function track(record:RecordRow, now=new Date()) {
   const date=record.buy_time.slice(0,10),index=dates.indexOf(date),local=shanghaiNow(now);
   let data: {bars?:Bar[];validation?:{date:string;status:string}[];adjustment?:Adjustment}={};try{data=JSON.parse(record.market_data??'{}');}catch{}
   const bars=closedBars(data.bars??[],now),byDate=new Map(bars.map(b=>[b.date,b]));
+  let minuteClose=false,referenceConflict=false;try{const e=JSON.parse(record.reference_evidence??'{}');minuteClose=e.field==='close';referenceConflict=minuteClose&&e.cross_verified===false&&(e.quotes?.length??0)>1;}catch{}
   const rawBase=record.actual_price??record.reference_price,a=data.adjustment;
   const adjusted=a?.status==='verified'||a?.status==='no_action';
   const adjustmentPending=a?.status==='pending';
@@ -25,5 +26,5 @@ export function track(record:RecordRow, now=new Date()) {
   });
   const complete=window.slice(1).every(w=>w.value!==null);
   const ended=window[10].date!==null&&window[10].date<local.slice(0,10);
-  return {window,base,rawBase,adjustment:a??null,baseType:(record.actual_price!==null?'实际成交价':record.reference_price!==null?'分钟参考买入价（暂估）':'待补价')+(adjusted&&a!.status==='verified'?'（计算基准已前复权）':''),...extrema(window.slice(1).map(w=>w.value)),progress:window.slice(1).filter(w=>w.value!==null).length,status:!calendarUsable?'日历待核实':base===null?'待补价':complete?'10日价格观察完成':ended?'窗口结束但数据不完整':'追踪中',warning:adjustmentPending?a!.reason:adjusted?a!.reason:!inSession?'非连续竞价时段（含午休或集合竞价），请核对时间；当前不输出统计':blocked,indicators:indicators(bars)};
+  return {window,base,rawBase,adjustment:a??null,baseType:(record.actual_price!==null?'实际成交价':record.reference_price!==null?(minuteClose?(referenceConflict?'分钟收盘参考价（两源有差异）':'分钟收盘参考价（暂估）'):'分钟参考买入价（暂估）'):'待补价')+(adjusted&&a!.status==='verified'?'（计算基准已前复权）':''),...extrema(window.slice(1).map(w=>w.value)),progress:window.slice(1).filter(w=>w.value!==null).length,status:!calendarUsable?'日历待核实':base===null?'待补价':complete?'10日价格观察完成':ended?'窗口结束但数据不完整':'追踪中',warning:adjustmentPending?a!.reason:adjusted?a!.reason:!inSession?'非连续竞价时段（含午休或集合竞价），请核对时间；当前不输出统计':blocked,indicators:indicators(bars)};
 }

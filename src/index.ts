@@ -9,6 +9,7 @@ import {analysisSummary} from './analysis-summary';
 import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 import {runCloseSync,closeSyncStatus} from './close-sync';
 import {importReviewed} from './reviewed-import';
+import {minuteCloseSource} from './reference-source';
 import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
@@ -147,7 +148,8 @@ async function api(request:Request,env:Env,url:URL) {
       const reference=override?optionalPositive(b.reference_price,'参考价'):r.reference_price;
       const referenceReason=text(b.reference_reason,2000).trim();
       if(override&&!referenceReason)throw new Error('修改参考价必须填写依据');
-      const evidence=override?JSON.stringify({provider:'用户手动提供',kind:'manual_override',value:reference,reason:referenceReason,previous_reference_price:r.reference_price,previous_evidence:r.reference_evidence,updated_by:user.username,updated_at:now()}):r.reference_evidence;
+      const source=override&&b.reference_source?minuteCloseSource(b.reference_source,reference,v):{provider:'用户手动提供',kind:'manual_override'};
+      const evidence=override?JSON.stringify({...source,value:reference,reason:referenceReason,previous_reference_price:r.reference_price,previous_evidence:r.reference_evidence,updated_by:user.username,updated_at:now()}):r.reference_evidence;
 
       const checked=b.checked_through===undefined?r.checked_through:b.checked_through||null;
       if(checked!==null&&!/^\d{4}-\d{2}-\d{2}$/.test(checked))throw new Error('核对日期格式错误');

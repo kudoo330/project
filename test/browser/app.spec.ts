@@ -213,8 +213,9 @@ test('manual reference correction preserves close data and actual price, require
  let row=(await(await c.get('/api/records')).json()).records.find(r=>r.notes===notes);
  try{
   expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:8.45}})).status()).toBe(400);
-  expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:8.45,reference_reason:'User confirmed single-record correction'}})).status()).toBe(200);
-  const saved=await(await c.get('/api/records/'+row.id)).json();expect(saved.reference_price).toBe(8.45);expect(saved.actual_price).toBeNull();expect(saved.market_data).toBe(row.market_data);expect(saved.original_time).toBe(row.original_time);const evidence=JSON.parse(saved.reference_evidence);expect(evidence.previous_reference_price).toBe(8.79);expect(evidence.reason).toContain('User confirmed');
+  const source={symbol:'600668.SH',source_label:stamp.replace('T',' ').slice(0,16)+':00',provider:'东方财富',field:'close',interval:'1m',quotes:[{provider:'东方财富',price:8.45,url:'https://push2his.eastmoney.com/api/qt/stock/trends2/get',fetched_at:new Date().toISOString()},{provider:'腾讯',price:8.45,url:'https://web.ifzq.gtimg.cn/appstock/app/day/query',fetched_at:new Date().toISOString()}]};
+  expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:8.45,reference_reason:'User confirmed single-record correction',reference_source:source}})).status()).toBe(200);
+  const saved=await(await c.get('/api/records/'+row.id)).json();expect(saved.reference_price).toBe(8.45);expect(saved.actual_price).toBeNull();expect(saved.market_data).toBe(row.market_data);expect(saved.original_time).toBe(row.original_time);const evidence=JSON.parse(saved.reference_evidence);expect(evidence.previous_reference_price).toBe(8.79);expect(evidence.reason).toContain('User confirmed');expect(evidence.cross_verified).toBe(true);expect(saved.tracking.baseType).toContain('分钟收盘参考价');
   expect((await c.patch('/api/records/'+row.id,{data:{revision:row.revision,reference_price:9,reference_reason:'stale'}})).status()).toBe(409);row=saved;
  }finally{await c.delete('/api/records/'+row.id,{data:{revision:row.revision}});await c.dispose();}
 });
