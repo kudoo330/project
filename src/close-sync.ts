@@ -1,6 +1,6 @@
 import schema from '../migrations/0003_close_sync.sql';
 import {verifiedDaily} from './market';
-import {mergeCloseWindow,collectionWindow} from './close-validation';
+import {mergeCloseWindow,collectionWindow,verifiedCloseDates} from './close-validation';
 import {closeSyncSchedule,planCloseSync,syncDay,selectCloseBatch,eligibleCloseGroups,loadCloseBatch, type CloseAttempt} from './close-sync-plan';
 import type {Env,RecordRow} from './types';
 const ready=new WeakMap<object,Promise<void>>();
@@ -35,13 +35,10 @@ export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDa
     for(const group of selected){
       let {quote,error}=quotes.get(group.symbol)!;
       if(quote){
-        const available=new Map(quote.bars.filter(b=>b.close>0&&Number.isFinite(b.close)&&b.date<=day.date).map(b=>[b.date,b]));
-        const absent=[...group.dates].filter(date=>!available.has(date));
-        if(absent.length)error='缺少有效收盘报价：'+absent.join('、');
         for(const r of group.records){
-          const missing=collectionWindow(r).filter(d=>d<=day.date&&!available.has(d));
+          const saved=mergeCloseWindow(r,quote),valid=verifiedCloseDates(saved);
+          const missing=collectionWindow(r).filter(d=>d<=day.date&&!valid.has(d));
           if(missing.length)error='缺少交叉验证通过的收盘价：'+missing.join('、');
-          const saved=mergeCloseWindow(r,quote);
           const recordError=missing.length?'自动同步：缺少交叉验证通过的收盘价 '+missing.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
           if(recordError)error=recordError;
           await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(quote.name||r.name,JSON.stringify(saved),quote.fetchedAt,recordError,r.id,r.revision).run();

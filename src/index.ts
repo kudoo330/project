@@ -1,7 +1,7 @@
 import { digest, identity, login, logout } from './auth';
 import { csvCell, normalizeSymbol, normalizeTime, optionalPositive, shanghaiNow } from './domain';
 import { daily, minute, verifiedDaily } from './market';
-import {mergeCloseWindow,collectionWindow} from './close-validation';
+import {mergeCloseWindow,collectionWindow,verifiedCloseDates} from './close-validation';
 import { calendarInfo, track } from './tracking';
 import type { Env, RecordRow } from './types';
 import {listStrategies,ensureAnalysisSchema} from './strategy-analysis';
@@ -178,7 +178,7 @@ async function api(request:Request,env:Env,url:URL) {
         if(!quotes.has(r.symbol))quotes.set(r.symbol,verifiedDaily(env,r.symbol));
         const d=await quotes.get(r.symbol)!,saved=mergeCloseWindow(r,d),conflicts=saved.validation.filter(v=>v.status!=='matched');
         const local=shanghaiNow(),due=collectionWindow(r).filter(date=>date<local.slice(0,10)||date===local.slice(0,10)&&local.slice(11)>='16:05:00');
-        const missing=due.filter(date=>!d.bars.some(b=>b.date===date));
+        const valid=verifiedCloseDates(saved),missing=due.filter(date=>!valid.has(date));
         const pending=[...new Set([...conflicts.map(v=>v.date),...missing])];
         const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
         await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(d.name||r.name,JSON.stringify(saved),d.fetchedAt,error,id,r.revision).run();
