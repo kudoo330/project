@@ -2,12 +2,13 @@ import dates from './calendar.json';
 import {shanghaiNow} from './domain';
 import type {Bar,RecordRow} from './types';
 import {collectionWindow} from './close-validation';
-export const closeSyncSchedule={timezone:'Asia/Shanghai',starts:'16:05',ends:'23:55',intervalMinutes:10,limitPerRun:8,calendarEnd:dates.at(-1)};
+export const closeSyncSchedule={timezone:'Asia/Shanghai',starts:'16:05',ends:'23:55',intervalMinutes:1,limitPerRun:8,concurrency:2,retryMinutes:10,calendarEnd:dates.at(-1)};
 export function syncDay(now:Date){
   const local=shanghaiNow(now),date=local.slice(0,10);
   if(date<dates[0]||date>dates[dates.length-1])return {date,active:false,reason:'交易日历超出覆盖范围，自动同步暂停；需更新日历'};
   if(!dates.includes(date))return {date,active:false,reason:'市场休市，跳过'};
   if(local.slice(11)<'16:05:00')return {date,active:false,reason:'未到北京时间16:05'};
+  if(local.slice(11)>'23:55:59')return {date,active:false,reason:'已超过北京时间23:55'};
   return {date,active:true,reason:''};
 }
 export function storedBars(record:RecordRow):Bar[]{try{return JSON.parse(record.market_data??'{}').bars??[];}catch{return [];}}
@@ -40,4 +41,26 @@ export function selectCloseBatch(groups:ReturnType<typeof planCloseSync>,today:s
     selected.push({...group,records,dates:new Set(records.flatMap(r=>closeTargets(r,today))),hasMoreRecords:records.length<group.records.length});
   }
   return selected;
+}
+
+export type CloseAttempt={symbol:string;last_attempt:string;last_error:string|null};
+export function eligibleCloseGroups(groups:ReturnType<typeof planCloseSync>,history:CloseAttempt[],now:Date){
+  const bySymbol=new Map(history.map(h=>[h.symbol,h]));
+  const today=shanghaiNow(now).slice(0,10);
+  const attemptedToday=(symbol:string)=>{const h=bySymbol.get(symbol);return !!h&&shanghaiNow(new Date(h.last_attempt)).startsWith(today);};
+  return groups.filter(g=>{
+    const h=bySymbol.get(g.symbol);
+    return !h?.last_error||now.getTime()-Date.parse(h.last_attempt)>=closeSyncSchedule.retryMinutes*60000;
+  }).sort((a,b)=>Number(attemptedToday(a.symbol))-Number(attemptedToday(b.symbol)));
+}
+// Bound simultaneous provider requests; one failed security cannot cancel its peers.
+export async function loadCloseBatch<T>(groups:{symbol:string}[],load:(symbol:string)=>Promise<T>){
+  const results=new Map<string,{quote?:T;error:string|null}>();let next=0;
+  await Promise.all(Array.from({length:Math.min(closeSyncSchedule.concurrency,groups.length)},async()=>{
+    while(next<groups.length){const group=groups[next++];
+      try{results.set(group.symbol,{quote:await load(group.symbol),error:null});}
+      catch(e){results.set(group.symbol,{error:e instanceof Error?e.message:'自动同步失败'});}
+    }
+  }));
+  return results;
 }

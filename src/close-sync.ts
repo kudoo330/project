@@ -1,7 +1,7 @@
 import schema from '../migrations/0003_close_sync.sql';
 import {verifiedDaily} from './market';
 import {mergeCloseWindow,collectionWindow} from './close-validation';
-import {closeSyncSchedule,planCloseSync,syncDay,selectCloseBatch} from './close-sync-plan';
+import {closeSyncSchedule,planCloseSync,syncDay,selectCloseBatch,eligibleCloseGroups,loadCloseBatch, type CloseAttempt} from './close-sync-plan';
 import type {Env,RecordRow} from './types';
 const ready=new WeakMap<object,Promise<void>>();
 export function ensureCloseSyncSchema(env:Env){
@@ -27,14 +27,13 @@ export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDa
   try{
     if(!day.active)return await finish('skipped',day.reason);
     const records=(await env.DB.prepare('SELECT * FROM records').all<RecordRow>()).results;
-    const history=(await env.DB.prepare('SELECT symbol,last_attempt FROM close_sync_symbols').all<{symbol:string;last_attempt:string}>()).results;
-    const groups=planCloseSync(records,day.date,new Map(history.map(s=>[s.symbol,s.last_attempt]))),selected=selectCloseBatch(groups,day.date);
+    const history=(await env.DB.prepare('SELECT symbol,last_attempt,last_error FROM close_sync_symbols').all<CloseAttempt>()).results;
+    const groups=planCloseSync(records,day.date,new Map(history.map(s=>[s.symbol,s.last_attempt]))),selected=selectCloseBatch(eligibleCloseGroups(groups,history,now),day.date);
+    const quotes=await loadCloseBatch(selected,symbol=>load(env,symbol,true));
     let succeeded=0,failed=0;const unfinished=new Set<string>();
     // Respect free-tier D1 query budgets, including repeated samples of one security.
     for(const group of selected){
-      let error:string|null=null;
-      let quote;
-      try{quote=await load(env,group.symbol,true);}catch(e){error=e instanceof Error?e.message:'自动同步失败';}
+      let {quote,error}=quotes.get(group.symbol)!;
       if(quote){
         const available=new Map(quote.bars.filter(b=>b.close>0&&Number.isFinite(b.close)&&b.date<=day.date).map(b=>[b.date,b]));
         const absent=[...group.dates].filter(date=>!available.has(date));
