@@ -5,5 +5,5 @@ export function hasPriceGap(record,now=new Date()){
   if(!positive(base))return true;
   const local=new Date(now.getTime()+8*3600000).toISOString();
   const cutoff=local.slice(11,19)>='16:05:00'?local.slice(0,10):new Date(now.getTime()+8*3600000-86400000).toISOString().slice(0,10);
-  return (record.tracking?.window??[]).some(day=>day.date&&day.date<=cutoff&&!positive(day.rawClose??day.close));
+  return (record.tracking?.window??[]).some(day=>day.state!=='停牌'&&day.date&&day.date<=cutoff&&!positive(day.rawClose??day.close));
 }

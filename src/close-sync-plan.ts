@@ -1,3 +1,4 @@
+import {suspendedDates} from './suspensions';
 import dates from './calendar.json';
 import {shanghaiNow} from './domain';
 import type {Bar,RecordRow} from './types';
@@ -21,7 +22,8 @@ export function closeTargets(record:RecordRow,today:string):string[]{
   const fetched=record.fetched_at?shanghaiNow(new Date(record.fetched_at)):'';
   // Collect D0 plus D+1 through D+10; completion still counts ten after-buy days.
   let pendingAdjustment=false;try{pendingAdjustment=JSON.parse(record.market_data??'{}').adjustment?.status==='pending'&&today<=(window.at(-1)??'');}catch{}
-  return window.filter(date=>date<=today&&(!known.has(date)||date===today&&(fetched<cutoff||pendingAdjustment)));
+  let stopped=new Set<string>();try{stopped=suspendedDates(JSON.parse(record.market_data??'{}'));}catch{}
+  return window.filter(date=>date<=today&&!stopped.has(date)&&(!known.has(date)||date===today&&(fetched<cutoff||pendingAdjustment)));
 }
 export function planCloseSync(records:RecordRow[],today:string,lastAttempt:Map<string,string>=new Map()){
   const bySymbol=new Map<string,{symbol:string;records:RecordRow[];dates:Set<string>}>();

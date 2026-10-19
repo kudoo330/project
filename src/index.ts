@@ -9,6 +9,7 @@ import {analysisSummary} from './analysis-summary';
 import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 import {runCloseSync,closeSyncStatus} from './close-sync';
 import {importReviewed} from './reviewed-import';
+import {setSuspension,suspendedDates} from './suspensions';
 import {minuteCloseSource} from './reference-source';
 import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
@@ -168,6 +169,7 @@ async function api(request:Request,env:Env,url:URL) {
       ]);return json({ok:true});
     }
   }
+  if(url.pathname==='/api/suspensions'&&request.method==='POST')return json(await setSuspension(env.DB,await body(request),user.username));
   if(url.pathname==='/api/refresh'&&request.method==='POST') {
     const b=await body(request);if(!Array.isArray(b.ids)||b.ids.length>8)throw new Error('每批最多刷新8条记录，页面会自动分批');
     const results=[];
@@ -178,7 +180,7 @@ async function api(request:Request,env:Env,url:URL) {
         if(!quotes.has(r.symbol))quotes.set(r.symbol,verifiedDaily(env,r.symbol));
         const d=await quotes.get(r.symbol)!,saved=mergeCloseWindow(r,d),conflicts=saved.validation.filter(v=>v.status!=='matched');
         const local=shanghaiNow(),due=collectionWindow(r).filter(date=>date<local.slice(0,10)||date===local.slice(0,10)&&local.slice(11)>='16:05:00');
-        const valid=verifiedCloseDates(saved),missing=due.filter(date=>!valid.has(date));
+        const valid=verifiedCloseDates(saved),stopped=suspendedDates(saved),missing=due.filter(date=>!valid.has(date)&&!stopped.has(date));
         const pending=[...new Set([...conflicts.map(v=>v.date),...missing])];
         const error=pending.length?'缺少交叉核对通过的收盘价：'+pending.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
         await env.DB.prepare('UPDATE records SET name=?,market_data=?,fetched_at=?,error=? WHERE id=? AND revision=?').bind(d.name||r.name,JSON.stringify(saved),d.fetchedAt,error,id,r.revision).run();

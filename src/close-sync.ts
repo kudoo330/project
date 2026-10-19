@@ -1,3 +1,4 @@
+import {suspendedDates} from './suspensions';
 import schema from '../migrations/0003_close_sync.sql';
 import {verifiedDaily} from './market';
 import {mergeCloseWindow,collectionWindow,verifiedCloseDates} from './close-validation';
@@ -37,7 +38,7 @@ export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDa
       if(quote){
         for(const r of group.records){
           const saved=mergeCloseWindow(r,quote),valid=verifiedCloseDates(saved);
-          const missing=collectionWindow(r).filter(d=>d<=day.date&&!valid.has(d));
+          const stopped=suspendedDates(saved),missing=collectionWindow(r).filter(d=>d<=day.date&&!valid.has(d)&&!stopped.has(d));
           if(missing.length)error='缺少交叉验证通过的收盘价：'+missing.join('、');
           const recordError=missing.length?'自动同步：缺少交叉验证通过的收盘价 '+missing.join('、'):saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
           if(recordError)error=recordError;
