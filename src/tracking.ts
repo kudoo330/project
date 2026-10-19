@@ -2,7 +2,7 @@ import dates from './calendar.json';
 import type { Bar, RecordRow } from './types';
 import { change, closedBars, extrema, indicators, shanghaiNow } from './domain';
 import type {Adjustment} from './corporate-actions';
-export const calendarInfo={source:'新浪独立沪深交易日历，经AKShare读取',fetchedAt:'2026-10-16',start:dates[0],end:dates.at(-1),officialVerified:false};
+export const calendarInfo={source:'新浪独立沪深交易日历，经AKShare读取',fetchedAt:'2026-10-16',start:dates[0],end:dates.at(-1),officialVerified:false,bjCalendar:{basis:'用户于2026-10-19确认北交所与沪深开休市日期一致，使用相同交易日历',confirmedAt:'2026-10-19'}};
 export function track(record:RecordRow, now=new Date()) {
   const date=record.buy_time.slice(0,10),index=dates.indexOf(date),local=shanghaiNow(now);
   let data: {bars?:Bar[];validation?:{date:string;status:string}[];adjustment?:Adjustment}={};try{data=JSON.parse(record.market_data??'{}');}catch{}
@@ -12,9 +12,9 @@ export function track(record:RecordRow, now=new Date()) {
   const adjusted=a?.status==='verified'||a?.status==='no_action';
   const adjustmentPending=a?.status==='pending';
   const base=rawBase===null?null:rawBase*(adjusted?a!.baseMultiplier:1);
-  const blocked=record.symbol.endsWith('.BJ')?'北交所日历尚未核实':index<0?'买入日不在已加载交易日历':'公司行动尚未自动核实，以下仅为未复权价格观察';
+  const blocked=index<0?'买入日不在已加载交易日历':'公司行动尚未自动核实，以下仅为未复权价格观察';
   const time=record.buy_time.slice(11,19),inSession=time>='09:30:00'&&time<='11:30:00'||time>='13:00:00'&&time<='15:00:00';
-  const calendarUsable=!record.symbol.endsWith('.BJ')&&index>=0&&inSession;
+  const calendarUsable=index>=0&&inSession;
   const window=Array.from({length:11},(_,n)=>{
     const day=n===0&&inSession?date:calendarUsable?dates[index+n]??null:null;
     const b=day?byDate.get(day):undefined;

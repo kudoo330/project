@@ -31,3 +31,16 @@ test('unavailable or conflicting adjustment evidence blocks instead of guessing'
   const bars=[bar(buy,100),bar(ex,50)];assert.equal(corporateAdjustment(record,bars,undefined,ex).status,'pending');const wrong=source();wrong.qfq[0].close=40;assert.equal(corporateAdjustment(record,bars,wrong,ex).status,'pending');
   assert.equal(corporateAdjustment(record,[bar(ex,50)],source(),ex).status,'pending');
 });
+
+test('Beijing shares the trading window, adjustment checks and frozen D+10 snapshot',()=>{
+  const bj={...record,symbol:'920344.BJ'};
+  assert.deepEqual(afterBuyWindow(bj),window);
+  const bars=[bar(buy,100),...window.map(d=>bar(d,d<ex?100:50))];
+  const a=corporateAdjustment(bj,bars,source(),window[9]);
+  assert.equal(a.status,'verified');assert.equal(a.frozen,true);
+  const t=track({...bj,market_data:JSON.stringify({bars,adjustment:a})},new Date(window[9]+'T09:00:00Z'));
+  assert.equal(t.window[1].date,window[0]);assert.equal(t.window[10].date,window[9]);assert.equal(t.window[1].value,0);
+  assert.deepEqual(corporateAdjustment({...bj,market_data:JSON.stringify({adjustment:a})},bars,undefined,'2026-12-01'),a);
+  const missing=track({...bj,market_data:JSON.stringify({bars:bars.filter(b=>b.date!==window[0]),adjustment:a})},new Date(window[9]+'T09:00:00Z'));
+  assert.equal(missing.window[1].date,window[0]);assert.equal(missing.window[1].value,null);assert.equal(missing.window[2].date,window[1]);
+});

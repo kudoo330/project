@@ -12,7 +12,7 @@ export function ensureCloseSyncSchema(env:Env){
 export async function closeSyncStatus(env:Env){
   await ensureCloseSyncSchema(env);
   const latest=await env.DB.prepare('SELECT * FROM close_sync_runs ORDER BY started_at DESC LIMIT 1').first();
-  return {schedule:closeSyncSchedule,latest,warning:'北交所D0可凭当日双源报价采集；其后十日日历未核实，暂不计算或补齐D+n。缺失报价不自动认定为停牌。'};
+  return {schedule:closeSyncSchedule,latest,warning:'按用户确认，北交所与沪深使用相同交易日历，采集D0及D+1至D+10；收盘价及除权口径仍需交叉核对。缺失报价不自动认定为停牌。'};
 }
 export async function runCloseSync(env:Env,now=new Date(),load:typeof verifiedDaily=verifiedDaily){
   await ensureCloseSyncSchema(env);

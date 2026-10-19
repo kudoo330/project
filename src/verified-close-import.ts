@@ -37,7 +37,7 @@ export async function importVerifiedCloses(db:D1Database,value:any,actor:string)
    const allowed=new Set(collectionWindow(r));if(q.bars.some((b:Bar)=>!allowed.has(b.date)))throw new Error('报价超出该样本D0至D+10范围');
    let old:Bar[]=[];try{old=JSON.parse(r.market_data??'{}').bars??[];}catch{}
    if(q.bars.some((b:Bar)=>old.some(v=>v.date===b.date&&v.crossCheck?.status==='matched'&&Math.abs(v.close-b.close)>1e-8)))throw new Error('新证据与已核验收盘价不一致；保留原价，需人工核对');
-   const saved=mergeCloseWindow(r,q),error=r.symbol.endsWith('.BJ')?'D0收盘价已交叉验证；北交所后续交易日历待核实':saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
+   const saved=mergeCloseWindow(r,q),error=saved.adjustment.status==='pending'?'除权核对：'+saved.adjustment.reason:null;
    writes.push(db.prepare('UPDATE records SET market_data=?,fetched_at=?,error=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?').bind(JSON.stringify(saved),q.fetchedAt,error,new Date().toISOString(),r.id,r.revision));
    writes.push(db.prepare('INSERT INTO audit(id,record_id,actor,action,previous_value,created_at) SELECT ?,?,?,?,?,? WHERE changes()>0').bind(crypto.randomUUID(),r.id,actor,'verified-close-import',JSON.stringify({market_data:r.market_data,fetched_at:r.fetched_at,error:r.error}),new Date().toISOString()));ids.push(r.id);
   }
