@@ -4,3 +4,5 @@
 .checkbox-label{flex-direction:row;align-items:center;font-size:14px;color:var(--text)}.checkbox-label input{width:18px;height:18px;min-height:18px;margin:0;accent-color:var(--accent)}.strategy-row .fine{margin:5px 0 0}.strategy-row .actions{justify-content:flex-end}.strategy-row{align-items:flex-start;flex-wrap:wrap}
 
 .table-options{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;margin-bottom:12px}.table-options .fine{margin:0;flex:1;min-width:220px}.table-toggle{display:inline-flex;flex-direction:row;align-items:center;gap:8px;min-height:40px;cursor:pointer;white-space:nowrap}.table-toggle input{width:18px;height:18px;min-height:18px;margin:0;padding:0;accent-color:var(--accent)}#records-table .observation-close{font-size:11px;line-height:1.4;margin-top:3px;color:var(--muted);font-weight:400}
+
+#records-table .observation-cell{font-weight:700}
