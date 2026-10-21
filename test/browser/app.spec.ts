@@ -256,3 +256,25 @@ test('admin confirms and removes dated suspensions across strategies without cha
   await c.dispose();
  }
 });
+
+test('observation close prices toggle persistently, distinguish adjustment, and fit mobile scrolling',async({page})=>{
+ const window=Array.from({length:11},(_,n)=>({n,date:n===0?'2026-10-15':n===1?'2026-10-16':null,close:n===0?10.52:null,rawClose:n===0?10.52:null,value:n===0?5.2:null,state:n===0?'有效价格观察':n===1?'停牌':'待更新'}));
+ const base={id:'LOCAL-PRICE-DISPLAY',strategy_id:'898',strategy_name:'898',symbol:'300111.SZ',name:'LOCAL DISPLAY FIXTURE',version:'',buy_time:'2026-10-15T09:47:00',created_at:'2026-10-15T01:47:00Z',actual_price:10,reference_price:null,tags:'',notes:'',tracking:{window,base:10,rawBase:10,baseType:'实际成交价',progress:0,status:'追踪中',max:null,min:null}};
+ const adjusted={...base,id:'LOCAL-PRICE-ADJUSTED',symbol:'688265.SH',tracking:{...base.tracking,base:5,window:window.map(w=>w.n===0?{...w,close:5.26}:w)}};
+ await page.route('**/api/records',route=>route.fulfill({json:{records:[base,adjusted]}}));
+ await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
+ await expect(page).toHaveURL(/\/app/);
+ const toggle=page.getByLabel('显示收盘价',{exact:true});await expect(toggle).toBeChecked();
+ const rows=page.locator('#records-table tbody tr');const normal=rows.filter({has:page.getByRole('button',{name:'300111.SZ',exact:true})});const adj=rows.filter({has:page.getByRole('button',{name:'688265.SH',exact:true})});
+ const d0=normal.locator('td').nth(4);await expect(d0).toContainText('+5.20%');await expect(d0.locator('.observation-close')).toHaveText('收盘 ¥10.52');
+ await expect(adj.locator('td').nth(4).locator('.observation-close')).toHaveText('复权 ¥5.26');await expect(adj.locator('td').nth(4).locator('.observation-close')).toHaveAttribute('title',/原始收盘价 ¥10.52/);
+ await expect(normal.locator('td').nth(5)).toHaveText('停牌');await expect(normal.locator('td').nth(5).locator('.observation-close')).toHaveCount(0);
+ await expect(normal.locator('td').nth(6).locator('.observation-close')).toHaveText('收盘 —');
+ const columns=await normal.locator('td').count();await toggle.uncheck();await expect(page.locator('#records-table .observation-close')).toHaveCount(0);expect(await normal.locator('td').count()).toBe(columns);
+ await page.reload();await expect(toggle).not.toBeChecked();await expect(page.locator('#records-table .observation-close')).toHaveCount(0);
+ await toggle.check();await expect(d0.locator('.observation-close')).toBeVisible();
+ await page.screenshot({path:'/workspace/scratch/close-price-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await expect(toggle).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+ const scroll=await page.locator('#records-table').evaluate(table=>{const wrap=table.parentElement!;return {width:wrap.clientWidth,scroll:wrap.scrollWidth};});expect(scroll.scroll).toBeGreaterThan(scroll.width);
+ await page.locator('#records-table').evaluate(table=>{table.parentElement!.scrollLeft=450;});await page.screenshot({path:'/workspace/scratch/close-price-mobile.png',fullPage:true});
+});

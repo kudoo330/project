@@ -1,3 +1,4 @@
+import {observationPrice} from './observation-price.js';
 import {parseCSV} from './csv.js';
 import {sortRecords} from './record-sort.js';
 import {hasPriceGap} from './price-gaps.js';
@@ -12,6 +13,12 @@ function quoteEvidence(r){try{return JSON.parse(r.market_data??'{}');}catch{retu
 function crossCheckText(r){const v=quoteEvidence(r).validation;if(!v)return '尚未完成逐日交叉核对';return `已通过 ${v.filter(x=>x.status==='matched').length} 个交易日；待核对 ${v.filter(x=>x.status!=='matched').length} 个交易日（D0至D+10）`;}
 // Do not open record/strategy forms before their server-backed options are loaded.
 for(const id of ['add','empty-add','import','new-strategy'])$('#'+id).disabled=true;
+const closePriceToggle=$('#show-close-prices');
+try{closePriceToggle.checked=localStorage.getItem('tracker-show-close-prices')!=='false';}catch{}
+closePriceToggle.addEventListener('change',()=>{
+  try{localStorage.setItem('tracker-show-close-prices',String(closePriceToggle.checked));}catch{}
+  render();
+});
 let messageTimer;
 function message(text){$('#message').textContent=text;$('#message').hidden=false;clearTimeout(messageTimer);messageTimer=setTimeout(()=>$('#message').hidden=true,9000);}
 async function api(path,options={}){
@@ -33,7 +40,7 @@ function render(){
   $('#record-count').textContent=`${rows.length} 个策略样本 · ${new Set(rows.map(r=>r.symbol)).size} 只股票`;
   const headers=['策略 / 版本','股票','买入时间','价格基准',...Array.from({length:11},(_,i)=>i?'D+'+i:'D0'),'观察状态','最大上涨 / 下跌'];
   const header=el('tr');headers.forEach(h=>header.append(el('th',h)));$('#records-table thead').replaceChildren(header);const body=$('#records-table tbody');body.replaceChildren();
-  for(const r of rows){const tr=el('tr'),strategy=el('td');strategy.append(el('span',r.strategy_name,'pill'),el('small',r.version||'未指定版本'));tr.append(strategy);const stock=el('td');stock.append(button(r.symbol,()=>detail(r.id),''),el('small',r.name||'名称待查询'));tr.append(stock);const t=el('td',r.buy_time.slice(0,10));t.append(el('small',r.buy_time.slice(11)+' · 上海'));tr.append(t);const price=el('td',fmt(r.tracking.base));price.append(el('small',r.tracking.baseType));tr.append(price);for(const w of r.tracking.window){const td=el('td',w.state==='停牌'?'停牌':pct(w.value),w.value>0?'up':w.value<0?'down':'muted');td.title=`${w.date||'日期待核实'} · ${w.state}${w.suspension?' · 人工确认：'+w.suspension.reason:''}`;tr.append(td);}const status=el('td',r.tracking.status);status.append(el('small',r.error?'刷新失败，保留旧数据':r.fetched_at?'更新于 '+new Date(r.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'尚未获取行情'));tr.append(status,el('td',pct(r.tracking.max)+' / '+pct(r.tracking.min)));body.append(tr);}
+  for(const r of rows){const tr=el('tr'),strategy=el('td');strategy.append(el('span',r.strategy_name,'pill'),el('small',r.version||'未指定版本'));tr.append(strategy);const stock=el('td');stock.append(button(r.symbol,()=>detail(r.id),''),el('small',r.name||'名称待查询'));tr.append(stock);const t=el('td',r.buy_time.slice(0,10));t.append(el('small',r.buy_time.slice(11)+' · 上海'));tr.append(t);const price=el('td',fmt(r.tracking.base));price.append(el('small',r.tracking.baseType));tr.append(price);for(const w of r.tracking.window){const td=el('td',w.state==='停牌'?'停牌':pct(w.value),w.value>0?'up':w.value<0?'down':'muted');td.title=`${w.date||'日期待核实'} · ${w.state}${w.suspension?' · 人工确认：'+w.suspension.reason:''}`;const closePrice=observationPrice(w);if(closePriceToggle.checked&&w.state!=='停牌'){const line=el('small',closePrice?.text??'收盘 —','observation-close');line.title=closePrice?.title??'尚无有效收盘价';td.append(line);}tr.append(td);}const status=el('td',r.tracking.status);status.append(el('small',r.error?'刷新失败，保留旧数据':r.fetched_at?'更新于 '+new Date(r.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'尚未获取行情'));tr.append(status,el('td',pct(r.tracking.max)+' / '+pct(r.tracking.min)));body.append(tr);}
   $('#empty').hidden=rows.length>0;$('#records-table').hidden=rows.length===0;
 }
 for(let n=0;n<=10;n++)$('#record-sort-field').append(new Option((n?'D+'+n:'D0')+' 涨跌幅','d'+n));
