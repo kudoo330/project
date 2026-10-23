@@ -10,6 +10,7 @@ import {normalizeAnalysisRule} from '../public/analysis-scope.js';
 import {runCloseSync,closeSyncStatus} from './close-sync';
 import {importReviewed} from './reviewed-import';
 import {setSuspension,suspendedDates} from './suspensions';
+import {confirmDividend} from './confirmed-dividend';
 import {minuteCloseSource} from './reference-source';
 import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
@@ -52,6 +53,10 @@ async function api(request:Request,env:Env,url:URL) {
   if(url.pathname==='/api/close-sync'&&request.method==='GET')return json(await closeSyncStatus(env));
   if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
+  if(url.pathname==='/api/confirm-dividend'&&request.method==='POST'){
+    const result=await confirmDividend(env.DB,await body(request),user.username);
+    return json(result,result.ok?200:409);
+  }
   if(url.pathname==='/api/read-access'){
     if(user.role!=='admin')return json({error:'仅管理员可管理只读授权'},403);
     if(request.method==='POST')return json(await generateReadToken(env.DB,user.username));

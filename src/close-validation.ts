@@ -1,6 +1,6 @@
 import {suspensionMap} from './suspensions';
 import type {Bar,RecordRow} from './types';
-import {corporateAdjustment,type CorporateSource,type Adjustment} from './corporate-actions';
+import {corporateAdjustment,confirmedCashDividends,type CorporateSource,type Adjustment} from './corporate-actions';
 import {afterBuyWindow,collectionWindow} from './observation-window';
 export {afterBuyWindow,collectionWindow};
 export function compareCloses(primary:Bar[],secondary:Bar[],checkedAt:string,sources=['东方财富','腾讯']){
@@ -33,8 +33,8 @@ export function mergeCloseWindow<T extends {bars:Bar[];validation:{date:string;s
   const prior=factorRows.filter(f=>f.date<=record.buy_time.slice(0,10)).at(-1);
   let previousSource=null;try{previousSource=JSON.parse(record.market_data??'{}').adjustment_source??null;}catch{}
   const source=adjustment.frozen&&local.slice(0,10)>([...window].at(-1)??local.slice(0,10))?previousSource:corporateSource?{...corporateSource,factors:factorRows.filter(f=>f===prior||f.date>record.buy_time.slice(0,10)),qfq:corporateSource.qfq.filter(b=>(window.has(b.date)||b.date===record.buy_time.slice(0,10))&&b.date<=adjustment.anchor)}:null;
-  let suspensions={};try{suspensions=suspensionMap(JSON.parse(record.market_data??'{}'));}catch{}
-  return {...rest,bars,validation,adjustment,adjustment_history:history,adjustment_source:source,suspensions};
+  let suspensions={},confirmed_cash_dividends={};try{const data=JSON.parse(record.market_data??'{}');suspensions=suspensionMap(data);confirmed_cash_dividends=confirmedCashDividends(data);}catch{}
+  return {...rest,bars,validation,adjustment,adjustment_history:history,adjustment_source:source,suspensions,confirmed_cash_dividends};
 }
 
 export function verifiedCloseDates(data:{bars:Bar[];validation:{date:string;status:string}[]}){
