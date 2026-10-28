@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AMD 研究室 · 拾日研究室</title>
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/research.css">
+  <script src="/vendor/lightweight-charts.js" defer></script><script type="module" src="/amd-quotes.js"></script>
+</head>
+<body>
+  <div class="research-shell">
+    <aside class="research-sidebar"><a class="brand" href="/home"><span class="brand-icon">拾</span><span>拾日研究室<small>A-SHARE JOURNAL</small></span></a><nav aria-label="工作区导航"><a href="/home">平台首页</a><a class="active" aria-current="page" href="/backtest">AMD 行情</a><a href="/amd-strategies">候选策略实验</a><a href="/market-data.html">历史行情导入</a></nav><div class="research-sidebar-note"><span class="research-live-dot"></span>私人研究工作区<p>AMD<br>历史行情查看</p></div></aside>
+    <main class="research-main">
+      <header class="topbar"><span>私人股票研究平台 / AMD</span><div class="actions"><span id="research-user"></span><button id="research-theme" type="button" class="text-button">切换主题</button></div></header>
+      <div class="page-heading"><div><p class="eyebrow">OBSERVE. ANNOTATE. REVIEW.</p><h1>AMD 研究</h1><p class="muted">AMD · 查看历史K线、成交量和数据覆盖。</p></div><div class="actions"><a class="button secondary" href="/market-data.html">导入历史行情</a></div></div>
+      <p id="research-access" role="status">正在检查登录状态…</p>
+      <div id="research-content" hidden>
+        <section class="panel research-chart-panel" aria-labelledby="research-chart-title">
+          <div class="research-chart-heading"><div><div class="research-title-row"><h2 id="research-chart-title">AMD</h2><span class="pill">美国市场 · USD</span></div><p id="research-source" class="fine">请选择行情来源</p></div><span id="research-zone-label" class="research-zone">图表时区：美东</span></div>
+          <form id="research-controls" class="research-controls">
+            <label>标的<select id="research-symbol"><option value="AMD.US">AMD</option></select></label>
+            <label class="research-source-control">行情来源<select id="research-dataset"><option value="">暂无数据</option></select></label>
+            <label>开始日期（美东）<input id="research-start" type="date" value="2026-09-16"></label><label>结束日期（美东）<input id="research-end" type="date" value="2026-10-27"></label>
+            <label>图表时区<select id="research-timezone"><option value="America/New_York">美东时间</option><option value="Asia/Shanghai">北京时间</option></select></label><button type="submit" id="research-load" class="secondary">查看行情</button>
+          </form>
+          <p id="research-history-note" class="fine" aria-live="polite"></p><div class="research-chart-tools"><div class="research-timeframes" role="group" aria-label="K线周期"><button type="button" data-timeframe="1m" class="active" aria-pressed="true">1分</button><button type="button" data-timeframe="5m" aria-pressed="false">5分</button><button type="button" data-timeframe="15m" aria-pressed="false">15分</button><button type="button" data-timeframe="30m" aria-pressed="false">30分</button><button type="button" data-timeframe="60m" aria-pressed="false">60分</button><button type="button" data-timeframe="1d" aria-pressed="false">日线</button></div><div class="research-sessions"><label><input type="checkbox" name="session" value="pre"><span class="session-dot pre"></span>盘前</label><label><input type="checkbox" name="session" value="regular" checked><span class="session-dot regular"></span>盘中</label><label><input type="checkbox" name="session" value="post"><span class="session-dot post"></span>盘后</label></div><button type="button" id="research-one-year" class="secondary">近一年日线</button><button type="button" id="research-reset" class="text-button">重置视图</button></div>
+          <div id="research-chart-detail" class="research-ohlcv" aria-live="off">移动十字光标查看 OHLCV</div>
+          <div class="research-chart-stage"><div id="research-chart" aria-label="交互式K线和成交量图"></div><div id="research-chart-empty" class="research-chart-empty" hidden><span>⌁</span><h3>这段行情还没有载入</h3><p>已有数据会显示在这里。暂缺的分钟继续留空，取得文件后可手动补齐。</p><a href="/market-data.html" class="button secondary">打开历史行情导入</a></div></div>
+          <span id="research-coverage" class="fine"></span><div class="research-chart-footer"><p id="research-chart-status" role="status"></p><div class="actions"><button id="research-chart-prev" class="secondary" type="button" disabled>前一窗口</button><button id="research-chart-next" class="secondary" type="button" disabled>后一窗口</button></div></div>
+          <form id="research-goto-form" class="research-goto"><label id="research-goto-label">定位时间（美东）<input id="research-goto" type="datetime-local" step="60"></label><button class="secondary" type="submit">定位</button><span class="fine">滚轮缩放 · 拖动平移 · 只读行情</span></form>
+          <details class="research-quality"><summary id="research-quality-summary">数据覆盖与来源说明</summary><p id="research-quality-message"></p><div class="table-wrap"><table id="research-gaps-table"><thead><tr><th>时间</th><th>状态</th><th>原因</th></tr></thead><tbody></tbody></table></div></details>
+        </section>
+        <p class="research-footnote"><a href="/research">历史手工研究标注</a> · <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a></p>
+      </div></main></div></body></html>

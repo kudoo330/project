@@ -1,3 +1,4 @@
+try{document.documentElement.dataset.theme=localStorage.getItem('theme')||'light';}catch{}
 import {createResearchChart} from './research-chart.js';
 const $=s=>document.querySelector(s),node=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e;};
 const state={run:null,chart:null,equity:null,series:[],generation:0,chartGeneration:0,pending:null};
@@ -54,8 +55,9 @@ for(const id of ['bt-model','bt-cost','bt-filter'])$('#'+id).onchange=render;
 for(const id of ['bt-dear','bt-unfilled','bt-trade-session','bt-sort'])$('#'+id).onchange=renderTrades;
 $('#bt-chart-load').onclick=loadChart;
 $('#bt-export').onclick=async()=>{if(!state.run)return;$('#bt-export').disabled=true;try{const run=await api('/'+state.run.id+'/export'),blob=new Blob([JSON.stringify(run)],{type:'application/json'}),url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='amd-research-'+run.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){message(e.message,true);}finally{$('#bt-export').disabled=false;}};
-async function init(){try{const user=await fetch('/api/me',{cache:'no-store'});if(!user.ok||(await user.json()).role!=='admin')return;const [strategy,response]=await Promise.all([api('/strategies'),fetch('/api/research-data/datasets',{cache:'no-store'})]);if(!response.ok)throw new Error('行情来源暂不可用');const data=await response.json();$('#bt-params').value=JSON.stringify(strategy.defaultParameters,null,2);
+async function init(){try{const user=await fetch('/api/me',{cache:'no-store'});if(!user.ok)throw new Error('请先登录');const identity=await user.json();if(identity.role!=='admin')throw new Error('此页面仅供管理员使用');$('#bt-user').textContent=identity.username+' · 管理员';$('#bt-access').hidden=true;$('#research-content').hidden=false;const [strategy,response]=await Promise.all([api('/strategies'),fetch('/api/research-data/datasets',{cache:'no-store'})]);if(!response.ok)throw new Error('行情来源暂不可用');const data=await response.json();$('#bt-params').value=JSON.stringify(strategy.defaultParameters,null,2);
  for(const [period,id] of [['1m','bt-minute'],['1d','bt-daily']]){const select=$('#'+id);select.replaceChildren(new Option(period==='1m'?'请选择分钟数据':'不使用日线（不能运行D03）',''));const sources=data.datasets.filter(d=>d.symbol==='AMD.US'&&d.period===period&&d.adjustment==='none').sort((a,b)=>b.row_count-a.row_count);for(const ds of sources)select.append(new Option(`${ds.provider} · ${ds.row_count}条 · ${ds.first_time?.slice(0,10)}—${ds.last_time?.slice(0,10)}`,ds.id));if(sources.length)select.value=sources[0].id;}
  await history();message('选择范围后运行。首次建仓为外部给定的研究假设，非算法预测。');
- }catch(error){message(error.message,true);}}
+ }catch(error){message(error.message,true);$('#bt-access').hidden=false;$('#bt-access').textContent=error.message;}}
+document.querySelector('#bt-theme').onclick=()=>{const value=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=value;try{localStorage.setItem('theme',value);}catch{}};
 init();
