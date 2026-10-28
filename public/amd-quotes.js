@@ -51,7 +51,7 @@ function renderChartQuality(result){
 }
 $('#research-controls').onsubmit=event=>{event.preventDefault();loadChart();};
 $('#research-symbol').onchange=()=>{populateDatasets();loadChart();};
-$('#research-dataset').onchange=()=>loadChart();
+$('#research-dataset').onchange=()=>{populateDatasets();loadChart();};
 for(const input of document.querySelectorAll('[name=session]'))input.onchange=()=>loadChart();
 for(const control of document.querySelectorAll('[data-timeframe]'))control.onclick=()=>{state.timeframe=control.dataset.timeframe;for(const el of document.querySelectorAll('[data-timeframe]')){const active=el===control;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));}for(const el of document.querySelectorAll('[name=session]'))el.disabled=state.timeframe==='1d';populateDatasets();loadChart();};
 $('#research-timezone').onchange=()=>{state.zone=$('#research-timezone').value;state.chart?.setTimezone(state.zone);$('#research-zone-label').textContent='图表时区：'+(state.zone==='Asia/Shanghai'?'北京时间':'美东时间');$('#research-goto-label').firstChild.textContent='定位时间（'+(state.zone==='Asia/Shanghai'?'北京':'美东')+'）';if(state.chartData)renderChartQuality(state.chartData);};
