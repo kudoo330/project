@@ -6,24 +6,24 @@ export interface USSessionWindow { session: USSession; start_minute: number; end
 /** NYSE cash-equity reference schedule. Keep the explicit coverage boundary:
  * missing future calendar years must never silently become weekday calendars.
  * Source: https://www.nyse.com/markets/hours-calendars
- * This release has a locally reviewed 2026 schedule, not a live calendar feed.
+ * This release has locally reviewed 2025–2026 schedules, not a live feed.
  * Extended-hours venues have their own early-close schedules. Until separately
  * verified, we deliberately do not generate post-market bars on half-days.
  */
 export const US_CALENDAR = {
-  id: 'us-cash-equity-2026-v1', from: '2026-01-01', through: '2026-12-31',
+  id: 'us-cash-equity-2025-2026-v2', from: '2025-01-01', through: '2026-12-31',
   source: 'https://www.nyse.com/markets/hours-calendars',
   status: 'reference_schedule',
-  note: '2026年美股现货参考日历；半日市盘后时段尚未核实，不生成盘后窗口。',
+  note: '2025–2026年美股现货参考日历；半日市盘后时段尚未核实，不生成盘后窗口。',
 } as const;
-const HOLIDAYS = new Set(['2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25']);
-const EARLY_CLOSE = new Set(['2026-11-27','2026-12-24']);
+const HOLIDAYS = new Set(['2025-01-01','2025-01-09','2025-01-20','2025-02-17','2025-04-18','2025-05-26','2025-06-19','2025-07-04','2025-09-01','2025-11-27','2025-12-25','2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25']);
+const EARLY_CLOSE = new Set(['2025-07-03','2025-11-28','2025-12-24','2026-11-27','2026-12-24']);
 
 export function addUSDate(date: string, days: number) {
   return new Date(Date.parse(date + 'T00:00:00Z') + days * 86400000).toISOString().slice(0,10);
 }
 export function usCalendarDay(date: string) {
-  if (!validDate(date) || date < US_CALENDAR.from || date > US_CALENDAR.through) throw new Error('美股日历目前仅覆盖2026年；请先核实该年份日历');
+  if (!validDate(date) || date < US_CALENDAR.from || date > US_CALENDAR.through) throw new Error('美股日历目前仅覆盖2025–2026年；请先核实该年份日历');
   const weekday = new Date(date + 'T12:00:00Z').getUTCDay();
   const is_trading_day = weekday !== 0 && weekday !== 6 && !HOLIDAYS.has(date);
   const early_close = EARLY_CLOSE.has(date), regular_close_minute = early_close ? 780 : 960;

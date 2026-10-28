@@ -24,7 +24,12 @@ test('US sessions use IANA DST, holiday coverage and explicit half-day hours',()
   const half=usCalendarDay('2026-11-27');
   assert.equal(half.early_close,true);assert.equal(half.regular_close_minute,780);
   assert.deepEqual(half.sessions.map(s=>s.session),['pre','regular']);
-  assert.throws(()=>usCalendarDay('2027-01-04'),/仅覆盖2026/);
+  assert.equal(usCalendarDay('2025-01-09').is_trading_day,false);
+  assert.equal(usCalendarDay('2025-11-28').regular_close_minute,780);
+  assert.equal(new Date(usMinuteUTC('2025-10-31',570)).toISOString(),'2025-10-31T13:30:00.000Z');
+  assert.equal(new Date(usMinuteUTC('2025-11-03',570)).toISOString(),'2025-11-03T14:30:00.000Z');
+  assert.throws(()=>usCalendarDay('2027-01-04'),/仅覆盖2025–2026/);
+  assert.throws(()=>usCalendarDay('2024-12-31'),/仅覆盖2025–2026/);
   assert.equal(US_CALENDAR.status,'reference_schedule');
 });
 

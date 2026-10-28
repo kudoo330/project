@@ -1,5 +1,5 @@
 const form=document.querySelector('#login-form'),error=document.querySelector('#login-error');
-const destination=user=>user.role==='admin'?'/app':'/comparison';
+const destination=()=>'/home';
 fetch('/api/me').then(async r=>{if(r.ok)location.replace(destination(await r.json()));}).catch(()=>{});
 form.addEventListener('submit',async event=>{
   event.preventDefault();const button=form.querySelector('button');button.disabled=true;error.textContent='';

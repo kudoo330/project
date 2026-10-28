@@ -237,16 +237,18 @@ async function handle(request:Request,env:Env) {
   const url=new URL(request.url);
   if(url.pathname.startsWith('/api/'))return api(request,env,url);
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
-  if(/^\/(?:market-data|research|users)(?:\.html)?\/?$/.test(url.pathname)){
+  if(/^\/(?:market-data|research|backtest|users)(?:\.html)?\/?$/.test(url.pathname)){
     const user=await identity(request,env);
     if(!user)return Response.redirect(url.origin+'/',302);
     if(user.role!=='admin')return new Response('仅管理员可访问研究行情数据',{status:403,headers:{'Content-Type':'text/plain; charset=utf-8'}});
   }
-  if(/^\/(?:app|comparison)(?:\.html)?\/?$/.test(url.pathname)){
+  if(/^\/(?:home|app|comparison|compare)(?:\.html)?\/?$/.test(url.pathname)){
     const user=await identity(request,env);
     if(!user)return Response.redirect(url.origin+'/',302);
     if(/^\/app(?:\.html)?\/?$/.test(url.pathname)&&user.role!=='admin')return Response.redirect(url.origin+'/comparison',302);
   }
+  const alias=/^\/compare(?:\.html)?\/?$/.test(url.pathname)?'/comparison':/^\/backtest(?:\.html)?\/?$/.test(url.pathname)?'/research':null;
+  if(alias){const target=new URL(request.url);target.pathname=alias;return env.ASSETS.fetch(new Request(target,request));}
   return env.ASSETS.fetch(request);
 }
 export default {
@@ -267,7 +269,7 @@ export default {
     result.headers.set('X-Frame-Options','DENY');
     // Pinned Lightweight Charts 5.0.9 inserts one immutable attribution-logo
     // stylesheet. Permit only that exact text on its page, never arbitrary CSS.
-    const chartStyle=/^\/research(?:\.html)?\/?$/.test(new URL(request.url).pathname)?" 'sha256-3pRED1tOXas1FXFoPb9TGCjmYe9XQsmO9OV23khV2nY='":'';
+    const chartStyle=/^\/(?:research|backtest)(?:\.html)?\/?$/.test(new URL(request.url).pathname)?" 'sha256-3pRED1tOXas1FXFoPb9TGCjmYe9XQsmO9OV23khV2nY='":'';
     result.headers.set('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self'${chartStyle}; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     if(new URL(request.url).protocol==='https:')result.headers.set('Strict-Transport-Security','max-age=31536000');
     return result;

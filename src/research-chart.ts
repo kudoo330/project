@@ -149,7 +149,7 @@ export async function researchChartApi(request: Request, env: Env, url: URL): Pr
     if(!TIMEFRAMES.includes(timeframe as ResearchTimeframe))return json({error:'不支持此K线周期'},400);
     const start=url.searchParams.get('start'),end=url.searchParams.get('end');
     if(!validDate(start)||!validDate(end)||start>end)return json({error:'请选择有效的开始与结束日期'},400);
-    if(start<US_CALENDAR.from||end>US_CALENDAR.through)return json({error:'美股日历目前仅覆盖2026年；该年份日历尚未核实',code:'calendar_not_covered',calendar:US_CALENDAR},422);
+    if(start<US_CALENDAR.from||end>US_CALENDAR.through)return json({error:'美股日历目前仅覆盖2025–2026年；该年份日历尚未核实',code:'calendar_not_covered',calendar:US_CALENDAR},422);
     const supplied=url.searchParams.get('sessions'),sessions=(supplied===null?[...SESSION_NAMES]:supplied.split(',')) as USSession[];
     if(!sessions.length||sessions.some(session=>!SESSION_NAMES.includes(session))||new Set(sessions).size!==sessions.length)return json({error:'请选择盘前、常规或盘后时段'},400);
     const cursor=url.searchParams.get('cursor');

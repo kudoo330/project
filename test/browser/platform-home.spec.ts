@@ -1,0 +1,23 @@
+import {test,expect} from '@playwright/test';
+const headers={Origin:'http://127.0.0.1:8787'};
+test('login lands on two-module platform, canonical aliases render and mobile remains readable',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
+ await expect(page).toHaveURL(/\/home$/);await expect(page.getByRole('heading',{name:'私人股票研究平台'})).toBeVisible();
+ await expect(page.locator('#backtest-entry')).toBeVisible();await expect(page.locator('#platform-admin')).toBeVisible();
+ await page.getByRole('link',{name:/股价对比/}).click();await expect(page).toHaveURL(/\/compare$/);await expect(page.locator('#research-form')).toBeVisible();
+ await page.getByRole('link',{name:'平台首页'}).click();await page.locator('#backtest-entry').click();await expect(page).toHaveURL(/\/backtest$/);await expect(page.locator('#research-content')).toBeVisible();await expect(page.getByRole('heading',{name:'策略回测',exact:true})).toBeVisible();
+ const response=await page.request.get('/backtest');expect(response.headers()['content-security-policy']).toContain('sha256-3pRED1tOXas1FXFoPb9TGCjmYe9XQsmO9OV23khV2nY=');
+ await page.goto('/home');await page.screenshot({path:'/workspace/scratch/platform-home-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/platform-home-mobile.png',fullPage:true});expect(errors).toEqual([]);
+});
+test('ordinary-user home exposes comparison only and backtest aliases remain forbidden',async({page})=>{
+ await page.request.post('/api/login',{headers,data:{username:'viewer',password:'local-test-viewer-only'}});await page.goto('/home');await expect(page.locator('#backtest-entry')).toBeHidden();await expect(page.locator('#backtest-locked')).toBeVisible();await expect(page.locator('#platform-admin')).toBeHidden();
+ for(const path of ['/backtest','/backtest.html','/backtest/'])expect((await page.request.get(path,{maxRedirects:0})).status()).toBe(403);
+ expect((await page.request.get('/compare')).status()).toBe(200);
+});
+test('one-year daily shortcut spans 2025 and 2026, retains missing days and uses daily dataset',async({page})=>{
+ await page.request.post('/api/login',{headers,data:{username:'admin',password:'local-test-admin-only'}});
+ const dataset={symbol:'AMD.US',period:'1d',provider:'LOCAL-PLATFORM-YEAR-'+crypto.randomUUID(),adjustment:'none',adjustment_as_of:null,time_zone:'America/New_York',currency:'USD'},payload={dataset,source_note:'Synthetic platform browser fixture; not actual market prices.',rows:['2025-10-28','2026-10-27'].map(time=>({time,open:10,high:12,low:9,close:11,volume:100,status:'available'}))};
+ const preview=await(await page.request.post('/api/research-data/preview',{headers,data:payload})).json();expect(preview.valid).toBe(true);const imported=await page.request.post('/api/research-data/import',{headers,data:{...payload,preview_token:preview.preview_token,expected_revision:preview.revision,request_id:crypto.randomUUID()}});expect(imported.ok()).toBeTruthy();const id=(await imported.json()).dataset_id;
+ await page.goto('/backtest');await expect(page.locator('#research-content')).toBeVisible();await page.locator('[data-timeframe="1d"]').click();await page.locator('#research-dataset').selectOption(id);const result=page.waitForResponse(r=>r.url().includes('/api/research/chart?')&&r.url().includes('timeframe=1d')&&r.url().includes('start=2025-10-28')&&r.url().includes(id));await page.locator('#research-one-year').click();const response=await result;expect(response.ok()).toBeTruthy();const chart=await response.json();expect(chart.dataset.id).toBe(id);expect(chart.range.start).toBe('2025-10-28');expect(chart.range.end).toBe('2026-10-27');expect(chart.bars).toHaveLength(251);expect(chart.bars.filter((b:any)=>b.status==='available')).toHaveLength(2);await expect(page.locator('#research-start')).toHaveValue('2025-10-28');await expect(page.locator('#research-history-note')).toContainText('日线已载入');
+});

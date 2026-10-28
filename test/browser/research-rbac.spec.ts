@@ -18,11 +18,11 @@ test('ordinary users cannot read private A-share records, AMD research, exports 
     }
     const privatePaths=['/api/records','/api/strategies','/api/summary','/api/export','/api/close-sync','/api/research-data/datasets','/api/research/chart','/api/research/groups','/api/research/markers','/api/research/markers/export','/api/users'];
     for(const path of privatePaths)expect((await c.get(path)).status(),path).toBe(401);
-    for(const path of ['/research','/research.html','/market-data','/users','/comparison','/app'])expect((await c.get(path,{maxRedirects:0})).status(),path).toBe(302);
+    for(const path of ['/home','/home.html','/compare','/compare.html','/backtest','/backtest.html','/research','/research.html','/market-data','/users','/comparison','/app'])expect((await c.get(path,{maxRedirects:0})).status(),path).toBe(302);
     expect((await c.post('/api/login',{data:{username:'viewer',password:'isolated-viewer-password'}})).status()).toBe(200);
     for(const path of privatePaths)expect((await c.get(path)).status(),path).toBe(403);
-    for(const path of ['/research','/research.html','/market-data','/users'])expect((await c.get(path,{maxRedirects:0})).status(),path).toBe(403);
-    expect((await c.get('/comparison')).status()).toBe(200);
+    for(const path of ['/backtest','/backtest.html','/research','/research.html','/market-data','/users'])expect((await c.get(path,{maxRedirects:0})).status(),path).toBe(403);
+    for(const path of ['/home','/compare','/comparison'])expect((await c.get(path)).status()).toBe(200);
     expect((await c.get('/app',{maxRedirects:0})).headers().location).toBe(origin+'/comparison');
     expect((await c.get('/api/account/password')).status()).toBe(200);
     expect((await c.get('/api/quote?symbol=invalid')).status()).toBe(400);
@@ -30,7 +30,7 @@ test('ordinary users cannot read private A-share records, AMD research, exports 
     await c.post('/api/logout',{data:{}});
     expect((await c.post('/api/login',{data:{username:'admin',password:'isolated-admin-password'}})).status()).toBe(200);
     for(const path of ['/api/records','/api/research-data/datasets','/api/research/groups','/api/research/markers','/api/users'])expect((await c.get(path)).status(),path).toBe(200);
-    for(const path of ['/app','/research','/users','/comparison'])expect((await c.get(path)).status(),path).toBe(200);
+    for(const path of ['/home','/compare','/backtest','/app','/research','/users','/comparison'])expect((await c.get(path)).status(),path).toBe(200);
     expect((await c.post('/api/research/groups',{headers:{Origin:'https://foreign.test'},data:{name:'blocked'}})).status()).toBe(403);
     expect((await db.prepare('SELECT COUNT(*) n FROM records').first<any>())!.n).toBe(0);
   }finally{await c.dispose();await mf.dispose();}

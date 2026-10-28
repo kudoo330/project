@@ -53,7 +53,7 @@ test('origin protection, cross-strategy samples, retries, revision and persisten
 test('desktop login, empty state, form and theme',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
-  await expect(page).toHaveURL(/\/app(?:\.html)?$/);await expect(page.getByText('从第一条记录开始')).toBeVisible();
+  await expect(page).toHaveURL(/\/home$/);await page.goto('/app');await expect(page.getByText('从第一条记录开始')).toBeVisible();
   await page.locator('#add').click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'关闭',exact:true}).click();
   await page.getByRole('button',{name:'数据与设置'}).click();await page.getByRole('button',{name:'切换深色 / 浅色'}).click();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
   await page.getByRole('button',{name:'买入追踪',exact:false}).click();
@@ -61,11 +61,11 @@ test('desktop login, empty state, form and theme',async({page})=>{
 });
 test('mobile viewer has readable comparison navigation and no private tracking controls',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/');await page.getByLabel('用户名').fill('viewer');await page.getByLabel('密码',{exact:true}).fill('local-test-viewer-only');await page.getByRole('button',{name:'登录研究室'}).click();
-  await expect(page).toHaveURL(/\/comparison(?:\.html)?$/);await expect(page.getByRole('heading',{name:'股价对比'})).toBeVisible();await expect(page.locator('#add')).toHaveCount(0);await expect(page.locator('#admin-home')).toBeHidden();await expect(page.locator('#admin-research')).toBeHidden();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/tracker-mobile.png',fullPage:true});
+  await expect(page).toHaveURL(/\/home$/);await page.getByRole('link',{name:/股价对比/}).click();await expect(page).toHaveURL(/\/compare$/);await expect(page.getByRole('heading',{name:'股价对比'})).toBeVisible();await expect(page.locator('#add')).toHaveCount(0);await expect(page.locator('#admin-home')).toBeHidden();await expect(page.locator('#admin-research')).toBeHidden();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/tracker-mobile.png',fullPage:true});
   await page.getByRole('button',{name:'退出登录'}).click();await expect(page).toHaveURL(origin+'/');expect((await page.request.get('/api/records')).status()).toBe(401);
 });
 test('single-entry UI creates independent strategy samples; CSV preview rejects bad rows',async({page})=>{
-  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
   const note=prefix+crypto.randomUUID();
   try{
     await page.locator('#add').click();const form=page.locator('#record-form');await form.locator('[name=strategies]').selectOption(['twenty-minute','898']);await form.locator('[name=symbol]').fill('300111.SZ');await form.locator('[name=time]').fill('09:47:00');await form.locator('[name=actual_price]').fill('3.1');await form.locator('[name=notes]').fill(note);await form.getByRole('button',{name:'保存记录'}).click();await expect(page.locator('#editor')).not.toBeVisible();
@@ -96,7 +96,7 @@ test('strategy scope persists independently, handles stale revisions and never r
   }
 });
 test('strategy analysis dialog previews, saves, survives reload and can reset to all',async({page})=>{
-  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
   await page.getByRole('button',{name:'策略比较',exact:false}).click();const row=page.locator('.strategy-row').filter({hasText:'20分钟策略'});
   try{
     await row.getByRole('button',{name:'分析范围',exact:true}).click();const form=page.locator('#analysis-rule-form');await form.locator('[name=first_enabled]').check();await form.locator('[name=before_enabled]').check();await form.locator('[name=first_n]').fill('10');await expect(page.locator('#analysis-rule-preview')).toContainText('13:00:00');await form.getByRole('button',{name:'保存分析范围'}).click();await expect(page.locator('#analysis-editor')).not.toBeVisible();await expect(row).toContainText('最早 10 条样本');
@@ -108,7 +108,7 @@ test('strategy analysis dialog previews, saves, survives reload and can reset to
 });
 
 test('admin reviewed-file import saves reference prices and safely replays',async({page,request})=>{
-  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
   const strategy='LOCAL-IMPORT-'+crypto.randomUUID(),stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19);
   const fixture=[{strategy,symbol:'300111.SZ',name:'TEST FIXTURE',buy_time:stamp,reference_price:12.34,reference_evidence:{provider:'synthetic test source'}}];
   const upload=()=>page.locator('#reviewed-file').setInputFiles({name:'reviewed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});
@@ -126,7 +126,7 @@ test('admin reviewed-file import saves reference prices and safely replays',asyn
 });
 test('reviewed text previews multiple strategies and preserves manual price and original time',async({page})=>{
   const {reviewedPasteHeader}=await import('../../public/reviewed-paste.js');
-  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
   const strategy='LOCAL-PASTE-'+crypto.randomUUID(),stamp=new Date(Date.now()+8*3600000-3600000).toISOString().slice(0,19);
   const text=reviewedPasteHeader+'\n'+[strategy,'300111.SZ','TEST',stamp,'83.95','用户手动提供','original time','-','-'].join('\t');
   const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}});
@@ -142,7 +142,7 @@ test('admin manages scoped read access; token reads records but cannot mutate or
   expect((await request.get('/api/readonly/records')).status()).toBe(401);
   expect((await request.get('/api/readonly/records?token=unused')).status()).toBe(401);
   const viewer=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});await viewer.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});expect((await viewer.post('/api/read-access',{data:{}})).status()).toBe(403);await viewer.dispose();
-  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
   await page.getByRole('button',{name:'数据与设置'}).click();await page.locator('#create-read-token').click();await expect(page.locator('#read-token')).toHaveValue(/^read_[a-f0-9]{64}$/);
   const token=await page.locator('#read-token').inputValue(),scoped={'X-Tracker-Read-Token':token};
   try{
@@ -191,7 +191,7 @@ test('only empty strategies can be deleted; analysis rules clean up and records 
 test('tracking sort dropdowns order buy times and D0 through D10; missing returns stay last',async({page})=>{
  const rows=[['300111.SZ','09:32:00',0],['300112.SZ','09:30:00',null],['300113.SZ','09:33:00',12],['300114.SZ','09:31:00',-2]].map(([symbol,time,value],i)=>({id:'sort-'+i,symbol,name:'SORT FIXTURE',strategy_id:'twenty-minute',strategy_name:'TEST',buy_time:'2026-10-16T'+time,created_at:'2026-10-16T01:00:00Z',tags:'',notes:'',version:'',batch_id:'test',tracking:{base:10,baseType:'TEST',progress:0,status:'追踪中',max:null,min:null,window:Array.from({length:11},(_,n)=>({n,date:'2026-10-16',value,state:'TEST'}))}}));
  await page.route('**/api/records',route=>route.request().method()==='GET'?route.fulfill({json:{records:rows}}):route.continue());
- await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+ await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
  const codes=()=>page.locator('#records-table tbody tr td:nth-child(2) button').allTextContents();
  await expect(page.locator('#record-sort-field option')).toHaveCount(12);
  await page.locator('#record-sort-direction').selectOption('asc');await expect.poll(codes).toEqual(['300112.SZ','300114.SZ','300111.SZ','300113.SZ']);
@@ -204,7 +204,7 @@ test('pending-price card counts price gaps only, ignoring refresh errors, calend
  const record=(id,base,close)=>({id,symbol:'300111.SZ',name:'FIXTURE',strategy_id:'twenty-minute',strategy_name:'TEST',buy_time:day+'T09:40:00',created_at:day+'T01:00:00Z',tags:'',notes:'',version:'',batch_id:'test',reference_price:base,error:'Test refresh failure',tracking:{base,progress:0,status:'日历待核实',baseType:'TEST',max:null,min:null,window:[{date:day,n:0,rawClose:close,close,value:close===null?null:0,state:'TEST'},...Array.from({length:10},(_,n)=>({date:future,n:n+1,close:null,value:null,state:'待更新'}))]}});
  const records=[record('complete-with-error',10,10),record('missing-base',null,10),record('missing-close',10,null)];
  await page.route('**/api/records',route=>route.fulfill({json:{records}}));
- await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+ await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
  const card=page.locator('#stats .stat').filter({has:page.locator('span',{hasText:/^待补价$/})});await expect(card.locator('strong')).toHaveText('2');
  await page.locator('#filter-search').fill('FIXTURE');await expect(card.locator('strong')).toHaveText('2');
 });
@@ -235,7 +235,7 @@ test('admin confirms and removes dated suspensions across strategies without cha
  let records=(await(await c.get('/api/records')).json()).records.filter((r:any)=>r.name==='LOCAL-SUSPENSION-FIXTURE');
  try{
   await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
-  await expect(page).toHaveURL(/\/app/);await page.getByRole('button',{name:'600802.SH',exact:true}).first().click();
+  await expect(page).toHaveURL(/\/home$/);await page.goto('/app');await page.getByRole('button',{name:'600802.SH',exact:true}).first().click();
   const dayRow=()=>page.locator('#detail-content tr').filter({has:page.locator('td').filter({hasText:new RegExp('^'+day+'$')})});
   page.once('dialog',d=>d.accept('LOCAL TEST: verified suspension notice'));
   await dayRow().getByRole('button',{name:'标记停牌',exact:true}).click();
@@ -269,7 +269,7 @@ test('observation close prices toggle persistently, distinguish adjustment, and 
  const adjusted={...base,id:'LOCAL-PRICE-ADJUSTED',symbol:'688265.SH',tracking:{...base.tracking,base:5,window:window.map(w=>w.n===0?{...w,close:5.26}:w)}};
  await page.route('**/api/records',route=>route.fulfill({json:{records:[base,adjusted]}}));
  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
- await expect(page).toHaveURL(/\/app/);
+ await expect(page).toHaveURL(/\/home$/);await page.goto('/app');
  const toggle=page.getByLabel('显示收盘价',{exact:true});await expect(toggle).toBeChecked();
  const rows=page.locator('#records-table tbody tr');const normal=rows.filter({has:page.getByRole('button',{name:'300111.SZ',exact:true})});const adj=rows.filter({has:page.getByRole('button',{name:'688265.SH',exact:true})});
  const d0=normal.locator('td').nth(4);await expect(d0).toContainText('+5.20%');await expect(d0.locator('.observation-close')).toHaveText('收盘 ¥10.52');
