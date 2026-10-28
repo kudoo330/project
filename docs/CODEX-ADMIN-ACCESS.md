@@ -2,7 +2,7 @@
 
 用户明确授权Codex以管理员身份读写测试网站。环境配置：普通变量TRACKER_ADMIN_USERNAME（默认admin），安全密钥TRACKER_ADMIN_PASSWORD，凭据目标域名仅project.kudoo330.workers.dev。密码填写现有网站管理员登录密码，不是Cloudflare密码，也不是PBKDF2哈希；不发到聊天、不写Git。
 
-脚本使用HTTPS POST /api/login，Origin为网站源，username在JSON中，密码通过X-Tracker-Admin-Password请求头由Codex代理注入。该凭据通道仅对管理员账号生效，使用原有密码哈希校验、登录限流、会话权限和Origin保护，没有绕过登录。普通浏览器登录继续使用JSON密码。会话只在脚本进程内存中保存，执行后退出登录，网络中断导致注销失败时按原8小时失效。
+脚本使用HTTPS POST /api/login，Origin为网站源，username在JSON中，密码通过X-Tracker-Admin-Password请求头由Codex代理注入。该凭据通道仅对管理员账号生效，使用原有密码哈希校验、会话权限和Origin保护，没有绕过登录。普通浏览器登录继续使用JSON密码。按用户2026-10-28要求，两个入口均取消登录重试锁定。会话只在脚本进程内存中保存，执行后退出登录，网络中断导致注销失败时按原8小时失效。
 
 ```sh
 python scripts/admin-website.py

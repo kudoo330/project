@@ -27,17 +27,11 @@ export async function login(request: Request, env: Env) {
   const data = JSON.parse(raw) as { username?: string; password?: string };
   const username = String(data.username ?? '').slice(0, 80);
   // Proxy-backed Codex credentials travel in a scoped HTTPS header, never in a URL.
-  // This uses the same admin hash, attempt limit and session creation as browser login.
+  // This uses the same admin hash and session creation as browser login.
   const scopedPassword=request.headers.get('X-Tracker-Admin-Password');
   if(scopedPassword!==null&&username!==env.ADMIN_USERNAME)return Response.json({error:'此凭据通道仅用于管理员登录'},{status:401});
   const password = scopedPassword??String(data.password ?? '');
   if (password.length > 256) return Response.json({ error: '登录失败' }, { status: 400 });
-  const key = await digest(request.headers.get('CF-Connecting-IP') ?? 'local');
-  // Atomic reservation prevents concurrent requests from bypassing the attempt limit.
-  const limit = await env.DB.prepare(`INSERT INTO login_limits(key,attempts,expires_at) VALUES(?,1,?)
-    ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN expires_at<=? THEN 1 ELSE attempts+1 END,
-    expires_at=CASE WHEN expires_at<=? THEN excluded.expires_at ELSE expires_at END RETURNING attempts`).bind(key, Date.now() + 900000, Date.now(), Date.now()).first<{attempts:number}>();
-  if ((limit?.attempts ?? 99) > 10) return Response.json({ error: '尝试次数过多，请15分钟后重试。' }, { status: 429 });
   const role = username === env.ADMIN_USERNAME ? 'admin' : username === env.VIEWER_USERNAME ? 'viewer' : null;
   const encoded = role === 'admin' ? env.ADMIN_PASSWORD_HASH : env.VIEWER_PASSWORD_HASH;
   // Unknown usernames take the same PBKDF2 path as valid users.
@@ -46,8 +40,7 @@ export async function login(request: Request, env: Env) {
   const token = hex(crypto.getRandomValues(new Uint8Array(32)).buffer);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(Date.now()),
-    env.DB.prepare('INSERT INTO sessions(token_hash,username,role,expires_at) VALUES(?,?,?,?)').bind(await digest(token), username, role, Date.now()+28800000),
-    env.DB.prepare('DELETE FROM login_limits WHERE key=?').bind(key)
+    env.DB.prepare('INSERT INTO sessions(token_hash,username,role,expires_at) VALUES(?,?,?,?)').bind(await digest(token), username, role, Date.now()+28800000)
   ]);
   return Response.json({ username, role }, { headers: { 'Set-Cookie': sessionCookie(request, token, 28800) } });
 }

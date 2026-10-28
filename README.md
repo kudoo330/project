@@ -83,7 +83,7 @@ npx wrangler deploy --config wrangler.deploy.jsonc
 
 ## 安全与恢复
 
-PBKDF2-SHA256 100000次，随机盐；会话随机256位，只保存令牌摘要，HttpOnly / SameSite=Strict / HTTPS Secure，8小时过期。服务端强制角色权限、同源写入、参数化SQL、登录限流和CSV公式注入防护。无分析日志记录持仓；禁止提交真实密钥或数据库。
+PBKDF2-SHA256 100000次，随机盐；会话随机256位，只保存令牌摘要，HttpOnly / SameSite=Strict / HTTPS Secure，8小时过期。服务端强制角色权限、同源写入、参数化SQL和CSV公式注入防护。按用户2026-10-28要求取消登录失败后的15分钟锁定，错误凭据仍拒绝登录。无分析日志记录持仓；禁止提交真实密钥或数据库。
 
 升级前导出D1到受控位置，不在公开仓库保存。Cloudflare D1恢复 / Time Travel可用范围取决于账号方案，需在生产验证。导出恢复可先导入新数据库验证，再修改绑定；禁止以删库重建修复普通升级。代码回退采用 Cloudflare 已部署版本回退，**不会恢复数据库**。已执行的迁移只能通过兼容迁移或独立数据恢复处理。
 
