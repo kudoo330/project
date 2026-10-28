@@ -1,5 +1,5 @@
 /* Interactive, read-only price chart. Research marks never imply broker fills. */
-import {defaultChartRange,boundedChartRange,zoomChartRange} from './chart-navigation.js';
+import {defaultChartRange,chartRangeAtDate,boundedChartRange,zoomChartRange} from './chart-navigation.js';
 const SESSION_LABELS={pre:'盘前',regular:'常规',post:'盘后'};
 const STATUS_LABELS={available:'可用',partial:'不完整',missing:'缺失',not_entitled:'权限受限',request_failed:'获取失败',no_eligible_trade:'无合格成交'};
 const PALETTE=['#237f72','#7865bd','#b76b35','#3e77b6','#b6567b','#829344'];
@@ -20,7 +20,7 @@ export function createResearchChart(container,options={}){
   const lib=window.LightweightCharts;
   if(!lib?.createChart)throw new Error('K线组件未加载，请刷新页面');
   let destroyed=false,timeZone='America/New_York',timeframe='1m',rows=[],marks=[],groups=[],datasetKey='',suppressRange=false,frame=0,selectedId=null,dense=false;
-  let rowByTime=new Map(),rowByDate=new Map(),displayMarks=new Map(),lastRangeKey='';
+  let rowByTime=new Map(),rowByDate=new Map(),displayMarks=new Map(),lastRangeKey='',viewDate=null;
   const controls=options.navigation,manual=Boolean(controls);
   container.style.position='relative';container.style.minWidth='0';
   const host=document.createElement('div');host.style.cssText='position:absolute;inset:0;min-width:0;';
@@ -155,6 +155,7 @@ export function createResearchChart(container,options={}){
   function setMarkers(data,groupData){marks=Array.isArray(data)?data:[];if(groupData)groups=groupData;renderMarkers();}
   function setData(response){
     suppressRange=true;
+    const previousDate=viewDate||visibleDate(),previousTimeframe=timeframe;
     const key=(response.dataset?.id||response.dataset_id||'')+'|'+(response.timeframe||response.dataset?.period||'1m');
     const changed=key!==datasetKey,oldVisible=chart.timeScale().getVisibleRange();datasetKey=key;timeframe=response.timeframe||response.dataset?.period||'1m';
     rows=normalizeBars(response.bars);rowByTime=new Map(rows.map(row=>[row._time,row]));rowByDate=new Map(rows.filter(row=>row.trading_date).map(row=>[row.trading_date,row]));
@@ -165,7 +166,11 @@ export function createResearchChart(container,options={}){
     if(response.markers)marks=response.markers;if(response.groups)groups=response.groups;
     if(rows.length){
       if(changed||!oldVisible||response.resetView){
-        if(manual)chart.timeScale().setVisibleLogicalRange(defaultChartRange(rows,timeframe));
+        if(manual){
+          const saved=response.viewState,validSaved=saved&&/^\d{4}-\d{2}-\d{2}$/.test(saved.date),keepDate=validSaved?saved.date:previousDate&&previousTimeframe!==timeframe?previousDate:null;
+          const exact=validSaved&&saved.key===key&&saved.firstTime===rows[0]._time&&finite(saved.range?.from)&&finite(saved.range?.to)&&saved.range.to>saved.range.from;
+          chart.timeScale().setVisibleLogicalRange(exact?boundedChartRange(saved.range,rows.length):keepDate?chartRangeAtDate(rows,timeframe,keepDate):defaultChartRange(rows,timeframe));viewDate=keepDate||visibleDate();
+        }
         else{
         let latest=rows.length-1;while(latest>=0&&!rows[latest]._valid)latest--;
         if(latest>=0)chart.timeScale().setVisibleLogicalRange({from:Math.max(-2,latest-179),to:latest+5});
@@ -199,9 +204,11 @@ export function createResearchChart(container,options={}){
   function rangeChanged(range){
     queueBands();syncNavigation();const nextDense=(chart.timeScale().options().barSpacing||6)<8;if(nextDense!==dense)renderMarkers();
     if(destroyed||suppressRange||!range||typeof range.from!=='number'||typeof range.to!=='number')return;
+    if(manual)viewDate=visibleDate();
     const key=range.from+'|'+range.to;if(key===lastRangeKey)return;lastRangeKey=key;
     (options.onVisibleRangeChange||options.onRangeChange)?.({from:new Date(range.from*1000).toISOString(),to:new Date(range.to*1000).toISOString()});
   }
+  function visibleDate(){const range=chart.timeScale().getVisibleLogicalRange();return range&&rows.length?rows[Math.max(0,Math.min(rows.length-1,Math.round((range.from+range.to)/2)))].trading_date:null;}
   function focusTime(value){
     const t=timestamp(value),row=rowAtTime(t);if(!row)return false;
     const index=rows.indexOf(row),half=Math.min(55,Math.max(12,Math.floor(rows.length/2)));
@@ -234,5 +241,5 @@ export function createResearchChart(container,options={}){
   const observer=new ResizeObserver(()=>{if(destroyed)return;chart.resize(Math.max(200,container.clientWidth),Math.max(240,container.clientHeight||480));queueBands();});observer.observe(container);
   chart.subscribeCrosshairMove(hover);chart.subscribeClick(click);chart.timeScale().subscribeVisibleTimeRangeChange(rangeChanged);
   setTimezone(timeZone);setTheme(document.documentElement.dataset.theme||'light');
-  return {setData,setMarkers,setTimezone,setTheme,focus:focusTime,focusTime,reset,zoomIn:()=>zoom(.65),zoomOut:()=>zoom(1/.65),highlight(id){selectedId=id;renderMarkers();},destroy(){if(destroyed)return;destroyed=true;cancelAnimationFrame(frame);listeners.forEach(fn=>fn());if(controls)chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncNavigation);observer.disconnect();chart.unsubscribeCrosshairMove(hover);chart.unsubscribeClick(click);chart.timeScale().unsubscribeVisibleTimeRangeChange(rangeChanged);markerPlugin.detach();chart.remove();host.remove();bands.remove();}};
+  return {setData,setMarkers,setTimezone,setTheme,focus:focusTime,focusTime,reset,getViewState(){return {key:datasetKey,date:viewDate||visibleDate(),firstTime:rows[0]?._time,range:chart.timeScale().getVisibleLogicalRange()};},zoomIn:()=>zoom(.65),zoomOut:()=>zoom(1/.65),highlight(id){selectedId=id;renderMarkers();},destroy(){if(destroyed)return;destroyed=true;cancelAnimationFrame(frame);listeners.forEach(fn=>fn());if(controls)chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncNavigation);observer.disconnect();chart.unsubscribeCrosshairMove(hover);chart.unsubscribeClick(click);chart.timeScale().unsubscribeVisibleTimeRangeChange(rangeChanged);markerPlugin.detach();chart.remove();host.remove();bands.remove();}};
 }

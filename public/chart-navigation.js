@@ -1,4 +1,12 @@
 const DAYS={'1m':1,'5m':3,'15m':5,'30m':10,'60m':20,'1d':252};
+export function chartRangeAtDate(rows,timeframe,date){
+ if(!rows.length)return null;
+ const days=[],starts=[];
+ for(let i=0;i<rows.length;i++)if(rows[i].trading_date!==days.at(-1)){days.push(rows[i].trading_date);starts.push(i);}
+ let anchor=days.findIndex(day=>day>=date);if(anchor<0)anchor=days.length-1;
+ const count=Math.min(days.length,DAYS[timeframe]||1),first=Math.max(0,Math.min(days.length-count,anchor-Math.floor(count/2))),last=first+count;
+ return {from:starts[first]-.5,to:(last<starts.length?starts[last]:rows.length)-.5};
+}
 export function defaultChartRange(rows,timeframe){
  if(!rows.length)return null;
  let last=rows.length-1;while(last>0&&rows[last]._valid===false)last--;

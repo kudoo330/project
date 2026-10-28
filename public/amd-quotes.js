@@ -1,10 +1,15 @@
 import {createResearchChart} from './research-chart.js';
 import {loadChartRange} from './chart-range.js';
+import {workspaceState,captureFields,restoreFields} from './workspace-state.js';
 
 
 const $=selector=>document.querySelector(selector);
 const QUALITY={available:'可用',partial:'不完整',missing:'行情缺失',not_entitled:'权限不足',request_failed:'获取失败',no_eligible_trade:'来源确认无合格成交'};
-const state={datasets:[],timeframe:'1m',zone:'America/New_York',chart:null,chartData:null,chartGeneration:0,chartBusy:false,chartAbort:null};
+const state={datasets:[],selectedSources:{},timeframe:'1m',zone:'America/New_York',chart:null,chartData:null,chartGeneration:0,chartBusy:false,chartAbort:null};
+const QUERY_FIELDS=['research-symbol','research-dataset','research-start','research-end','research-timezone','research-goto','research-download-source','research-download-start','research-download-end'];
+const QUERY_CHECKS=['session','download-session'];
+function saveWorkspace(){state.storage?.save({timeframe:state.timeframe,selectedSources:state.selectedSources,fields:captureFields(QUERY_FIELDS,QUERY_CHECKS),chart:state.chart?.getViewState()});}
+window.addEventListener('pagehide',saveWorkspace);
 const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=String(text);if(className)el.className=className;return el;};
 function message(selector,text,error=false){const el=$(selector);el.textContent=text;el.classList.toggle('research-error',error);}
 function displayTime(value,zone=state.zone){const date=new Date(value);return Number.isFinite(date.getTime())?new Intl.DateTimeFormat('zh-CN',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(date):'—';}
@@ -16,11 +21,13 @@ async function api(path,signal){const response=await fetch(path,{cache:'no-store
 }
 function populateDatasets(chooseDates=false){
   const old=$('#research-dataset').value,base=state.timeframe==='1d'?'1d':'1m',matches=state.datasets.filter(dataset=>dataset.symbol===$('#research-symbol').value&&dataset.period===base),select=$('#research-dataset');select.replaceChildren();
+  const previous=state.datasets.find(d=>d.id===old);if(previous)state.selectedSources[previous.period]=previous.id;
   if(!matches.length)select.append(new Option('此标的 / 周期暂无已载入行情',''));
   for(const dataset of matches)select.append(new Option(`${dataset.provider} · ${dataset.adjustment==='forward'?'前复权 '+dataset.adjustment_as_of:'不复权'}`,dataset.id));
   // Primary AMD minute source is Alpaca SIP; Longbridge is retained only for validation.
   const primary=base==='1m'?matches.find(d=>/^Alpaca\s*·\s*SIP/i.test(d.provider)&&d.adjustment==='none'):null;
   if(matches.some(dataset=>dataset.id===old))select.value=old;
+  else if(matches.some(dataset=>dataset.id===state.selectedSources[base]))select.value=state.selectedSources[base];
   else if(primary)select.value=primary.id;
   if(chooseDates&&matches.length){const dataset=matches.find(d=>d.id===select.value),start=dateInNY(dataset.first_time),end=dateInNY(dataset.last_time);if(start&&end){$('#research-start').value=start;$('#research-end').value=end;}}
   $('#research-chart-title').textContent=$('#research-symbol').value.replace('.US','');
@@ -34,7 +41,7 @@ async function loadChart(){
   let params;try{params=chartParams();}catch(error){message('#research-chart-status',error.message,true);return;}
   state.chartBusy=true;$('#research-load').disabled=true;message('#research-chart-status','正在连续载入所选日期范围…');
   try{const result=await loadChartRange((query,signal)=>api('/api/research/chart?'+query,signal),params,{signal:controller.signal,onProgress:({through})=>{if(generation===state.chartGeneration)message('#research-chart-status','正在连续载入…已到 '+through);}});if(generation!==state.chartGeneration)return;
-    state.chartData=result;state.chart?.setData({...result,timeZone:state.zone,resetView:true,markers:[],groups:[]});renderChartQuality(result);$('#research-chart-empty').hidden=result.bars.some(bar=>bar.open!==null&&bar.open!==undefined);
+    state.chartData=result;state.chart?.setData({...result,timeZone:state.zone,resetView:true,viewState:state.restoreView,markers:[],groups:[]});state.restoreView=null;renderChartQuality(result);$('#research-chart-empty').hidden=result.bars.some(bar=>bar.open!==null&&bar.open!==undefined);
   }catch(error){if(generation===state.chartGeneration&&error.name!=='AbortError'){noChart(error.message);message('#research-chart-status',error.message,true);}}
   finally{if(generation===state.chartGeneration){state.chartBusy=false;$('#research-load').disabled=false;}}
 }
@@ -53,7 +60,8 @@ $('#research-controls').onsubmit=event=>{event.preventDefault();loadChart();};
 $('#research-symbol').onchange=()=>{populateDatasets();loadChart();};
 $('#research-dataset').onchange=()=>{populateDatasets();loadChart();};
 for(const input of document.querySelectorAll('[name=session]'))input.onchange=()=>loadChart();
-for(const control of document.querySelectorAll('[data-timeframe]'))control.onclick=()=>{state.timeframe=control.dataset.timeframe;for(const el of document.querySelectorAll('[data-timeframe]')){const active=el===control;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));}for(const el of document.querySelectorAll('[name=session]'))el.disabled=state.timeframe==='1d';populateDatasets();loadChart();};
+function syncTimeframe(){for(const el of document.querySelectorAll('[data-timeframe]')){const active=el.dataset.timeframe===state.timeframe;el.classList.toggle('active',active);el.setAttribute('aria-pressed',String(active));}for(const el of document.querySelectorAll('[name=session]'))el.disabled=state.timeframe==='1d';}
+for(const control of document.querySelectorAll('[data-timeframe]'))control.onclick=()=>{state.timeframe=control.dataset.timeframe;syncTimeframe();populateDatasets();loadChart();};
 $('#research-timezone').onchange=()=>{state.zone=$('#research-timezone').value;state.chart?.setTimezone(state.zone);$('#research-zone-label').textContent='图表时区：'+(state.zone==='Asia/Shanghai'?'北京时间':'美东时间');$('#research-goto-label').firstChild.textContent='定位时间（'+(state.zone==='Asia/Shanghai'?'北京':'美东')+'）';if(state.chartData)renderChartQuality(state.chartData);};
 $('#research-one-year').onclick=()=>{const ds=state.datasets.find(d=>d.id===$('#research-dataset').value&&d.period==='1d')||state.datasets.find(d=>d.symbol===$('#research-symbol').value&&d.period==='1d');if(!ds){message('#research-chart-status','此标的暂无已载入日线。',true);return;}const end=dateInNY(ds.last_time),start=new Date(end+'T12:00:00Z');start.setUTCFullYear(start.getUTCFullYear()-1);start.setUTCDate(start.getUTCDate()+1);$('#research-start').value=start.toISOString().slice(0,10);$('#research-end').value=end;document.querySelector('[data-timeframe="1d"]').click();};
 
@@ -69,8 +77,11 @@ $('#research-goto-form').onsubmit=event=>{event.preventDefault();try{const time=
 async function init(){try{
  const user=await api('/api/me');if(user.role!=='admin')throw new Error('此页面仅供管理员使用');
  $('#research-user').textContent=user.username+' · 管理员';const data=await api('/api/research-data/datasets');state.datasets=data.datasets||[];
- populateDatasets(true);downloadSources();$('#research-access').hidden=true;$('#research-content').hidden=false;
- state.chart=createResearchChart($('#research-chart'),{detailElement:$('#research-chart-detail'),navigation:{zoomIn:$('#research-zoom-in'),zoomOut:$('#research-zoom-out'),fit:$('#research-fit'),reset:$('#research-reset'),position:$('#research-position'),label:$('#research-visible-range')}});state.chart.setTheme(theme());await loadChart();
+ state.storage=workspaceState('amd-quotes',user.username);const saved=state.storage.load();
+ if(saved){if(['1m','5m','15m','30m','60m','1d'].includes(saved.timeframe))state.timeframe=saved.timeframe;for(const period of ['1m','1d'])if(state.datasets.some(d=>d.id===saved.selectedSources?.[period]&&d.period===period))state.selectedSources[period]=saved.selectedSources[period];state.restoreView=saved.chart;}
+ populateDatasets(true);downloadSources();restoreFields(saved?.fields,QUERY_FIELDS.filter(id=>!['research-download-start','research-download-end'].includes(id)),QUERY_CHECKS);populateDatasets();downloadDefaults();restoreFields(saved?.fields,['research-download-start','research-download-end']);syncTimeframe();
+ $('#research-access').hidden=true;$('#research-content').hidden=false;
+ state.chart=createResearchChart($('#research-chart'),{detailElement:$('#research-chart-detail'),navigation:{zoomIn:$('#research-zoom-in'),zoomOut:$('#research-zoom-out'),fit:$('#research-fit'),reset:$('#research-reset'),position:$('#research-position'),label:$('#research-visible-range')}});state.chart.setTheme(theme());$('#research-timezone').onchange();await loadChart();
 }catch(error){message('#research-access',error.message,true);$('#research-access').hidden=false;}}
 async function loadDownloads(){try{const result=await api('/api/research-downloads');const target=$('#research-downloads');target.replaceChildren();for(const file of result.files||[]){if(!/^download_[a-f0-9]{64}$/.test(file.id))continue;const link=node('a',file.title,'button secondary');link.href='/api/research-downloads/'+file.id;link.download=file.filename;target.append(link);}message('#research-downloads-status',target.childElementCount?'点击下载ZIP压缩包，解压后查看CSV行情。':'暂时没有准备好的下载文件。');}catch(error){message('#research-downloads-status',error.message,true);}}
 function nyLocal(value){if(/^\d{4}-\d{2}-\d{2}$/.test(value||''))return value;const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(value)).map(p=>[p.type,p.value]));return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;}

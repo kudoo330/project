@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {defaultChartRange,zoomChartRange,boundedChartRange} from '../public/chart-navigation.js';
+import {defaultChartRange,chartRangeAtDate,zoomChartRange,boundedChartRange} from '../public/chart-navigation.js';
 import {loadChartRange,expandChartPage} from '../public/chart-range.js';
 
 test('one-minute default covers one complete latest trading date; zoom and pan stay within the loaded range',()=>{
@@ -11,6 +11,16 @@ test('one-minute default covers one complete latest trading date; zoom and pan s
  assert.deepEqual(zoomChartRange(bigger,rows.length,100),{from:-.5,to:1169.5});
  assert.deepEqual(boundedChartRange({from:-100,to:290},rows.length),{from:-.5,to:389.5});
  assert.equal(zoomChartRange({from:0,to:10},0,1),null);
+});
+
+test('period changes center the same trading date, including daily spans and range boundaries',()=>{
+ const days=['2026-09-14','2026-09-15','2026-09-16','2026-09-17','2026-09-18'];
+ const rows=days.flatMap(trading_date=>Array.from({length:78},()=>({trading_date})));
+ assert.deepEqual(chartRangeAtDate(rows,'5m','2026-09-16'),{from:77.5,to:311.5});
+ assert.deepEqual(chartRangeAtDate(rows,'1m','2026-09-16'),{from:155.5,to:233.5});
+ assert.deepEqual(chartRangeAtDate(rows,'1d','2026-09-16'),{from:-.5,to:389.5});
+ assert.deepEqual(chartRangeAtDate(rows,'5m','2026-09-14'),{from:-.5,to:233.5});
+ assert.equal(chartRangeAtDate([],'1m','2026-09-16'),null);
 });
 
 test('continuous chunks preserve bars, weighted coverage, source version and cancellation',async()=>{
