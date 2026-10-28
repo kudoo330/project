@@ -36,7 +36,10 @@ function populateDatasets(chooseDates=false){
   const old=$('#research-dataset').value,base=state.timeframe==='1d'?'1d':'1m',matches=state.datasets.filter(dataset=>dataset.symbol===$('#research-symbol').value&&dataset.period===base),select=$('#research-dataset');select.replaceChildren();
   if(!matches.length)select.append(new Option('此标的 / 周期暂无已载入行情',''));
   for(const dataset of matches)select.append(new Option(`${dataset.provider} · ${dataset.adjustment==='forward'?'前复权 '+dataset.adjustment_as_of:'不复权'}`,dataset.id));
+  // Primary AMD minute source is Alpaca SIP; Longbridge is retained only for validation.
+  const primary=base==='1m'?matches.find(d=>/^Alpaca\s*·\s*SIP/i.test(d.provider)&&d.adjustment==='none'):null;
   if(matches.some(dataset=>dataset.id===old))select.value=old;
+  else if(primary)select.value=primary.id;
   if(chooseDates&&matches.length){const dataset=matches.find(d=>d.id===select.value),start=dateInNY(dataset.first_time),end=dateInNY(dataset.last_time);if(start&&end){$('#research-start').value=start;$('#research-end').value=end;}}
   $('#research-chart-title').textContent=$('#research-symbol').value.replace('.US','');
   const inventories=state.datasets.filter(d=>d.symbol===$('#research-symbol').value);$('#research-history-note').textContent=inventories.map(d=>`${d.period==='1d'?'日线':'1分钟线'}已载入 ${dateInNY(d.first_time)} 至 ${dateInNY(d.last_time)}，${d.row_count} 条（${d.provider}）`).join('；')+'。仅表示已保存的覆盖范围，窗口内缺价另行标明。';
