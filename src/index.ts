@@ -14,6 +14,7 @@ import {confirmDividend} from './confirmed-dividend';
 import {minuteCloseSource} from './reference-source';
 import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
+import {researchDataApi} from './research-data';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
 const text=(s:unknown,max=2000)=>String(s??'').slice(0,max);
@@ -50,6 +51,10 @@ async function api(request:Request,env:Env,url:URL) {
   const user=await identity(request,env);
   if(!user)return json({error:'请先登录'},401);
   if(url.pathname==='/api/me')return json(user);
+  if(url.pathname==='/api/research-data'||url.pathname.startsWith('/api/research-data/')){
+    if(user.role!=='admin')return json({error:'仅管理员可访问研究行情数据'},403);
+    return researchDataApi(request,env,url,user.username);
+  }
   if(url.pathname==='/api/close-sync'&&request.method==='GET')return json(await closeSyncStatus(env));
   if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
@@ -222,6 +227,11 @@ async function handle(request:Request,env:Env) {
   const url=new URL(request.url);
   if(url.pathname.startsWith('/api/'))return api(request,env,url);
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
+  if(/^\/market-data(?:\.html)?\/?$/.test(url.pathname)){
+    const user=await identity(request,env);
+    if(!user)return Response.redirect(url.origin+'/',302);
+    if(user.role!=='admin')return new Response('仅管理员可访问研究行情数据',{status:403,headers:{'Content-Type':'text/plain; charset=utf-8'}});
+  }
   if(/^\/app(?:\.html)?\/?$/.test(url.pathname)&&!await identity(request,env))return Response.redirect(url.origin+'/',302);
   return env.ASSETS.fetch(request);
 }

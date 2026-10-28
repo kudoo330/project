@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>历史行情导入 · 拾日研究室</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/market-data.css">
+  <script type="module" src="/market-data.js"></script>
+</head>
+<body>
+  <main class="market-page">
+    <header class="topbar"><a href="/app.html">← 返回研究工作台</a><span id="market-identity">正在检查登录状态…</span></header>
+    <div class="page-heading"><div><p class="eyebrow">HISTORICAL MARKET DATA</p><h1>历史行情导入</h1><p class="muted">先保留缺口，取得数据后再补齐。</p></div><button id="market-theme" type="button" class="secondary">切换深色 / 浅色</button></div>
+    <p id="market-access" role="status" aria-live="polite">正在检查管理员权限…</p>
+    <div id="market-content" hidden>
+      <div class="notice">此处保存管理员提供的独立研究行情，不修改原有 A 股买入记录。导入只校验格式和价格关系，不代表已通过独立来源交叉验证。缺价始终留空，不以 0 或相邻价格代替。</div>
+      <section class="panel" aria-labelledby="market-import-heading">
+        <div class="panel-heading"><div><h2 id="market-import-heading">1. 准备数据</h2><p class="fine">每批最多 500 行，文件或粘贴内容不超过 800 KB。先预览，再确认保存。</p></div><button id="market-template" type="button" class="secondary">下载 CSV 表头模板</button></div>
+        <form id="market-form" novalidate>
+          <fieldset id="market-inputs">
+            <div class="form-grid market-metadata">
+              <label>股票<select id="market-symbol" name="symbol"><option value="AMD.US">AMD · AMD.US</option><option value="AMDL.US">AMDL · AMDL.US</option></select></label>
+              <label>周期<select id="market-period" name="period"><option value="1m">1 分钟</option><option value="1d">日线</option></select></label>
+              <label>行情来源<input id="market-provider" name="provider" maxlength="80" required placeholder="例如：Longbridge 或人工核验来源"></label>
+              <label>复权方式<select id="market-adjustment" name="adjustment"><option value="none">不复权</option><option value="forward">前复权</option></select></label>
+              <label id="market-adjustment-date-label" hidden>复权截至日期<input id="market-adjustment-date" name="adjustment_as_of" type="date"></label>
+              <label class="span-all">来源说明<textarea id="market-source-note" name="source_note" rows="2" maxlength="2000" required placeholder="填写文件来源、获取日期及人工核验依据；缺口原因请逐行填写。"></textarea></label>
+              <label class="span-all">上传 CSV / JSON 文件<input id="market-file" type="file" accept=".csv,.json,text/csv,application/json"></label>
+              <label class="span-all">或粘贴 CSV / JSON<textarea id="market-paste" rows="8" spellcheck="false" placeholder="time,open,high,low,close,volume,status,reason"></textarea></label>
+            </div>
+            <p id="market-time-help" class="fine"></p>
+            <details class="market-format"><summary>字段与缺失状态说明</summary><p>CSV 表头：<code>time,open,high,low,close,volume,status,reason</code>。支持引号、引号内换行及双引号转义。JSON 可使用行数组，或包含 <code>dataset</code>、<code>source_note</code>、<code>rows</code> 的完整对象。</p><p>股票、周期、来源及复权方式共同区分数据集；前复权还须填写复权截至日期。JSON 完整对象中的信息会填入上方表单。</p><ul><li><code>available</code>：有有效价格；不填状态时使用此项。</li><li><code>missing</code>：价格缺失。</li><li><code>not_entitled</code>：数据源权限不足。</li><li><code>request_failed</code>：数据源请求失败。</li><li><code>no_eligible_trade</code>：来源明确确认没有合格成交；不能仅凭缺价选择此项。</li></ul><p>后四种状态的开、高、低、收四个价格必须全部留空，并填写原因。成交量未知时留空；确实为零时可填 0。日线独立导入，不从分钟数据拼接。</p></details>
+            <div class="actions"><button id="market-preview" type="submit">预览 / 校验</button><button id="market-clear" type="button" class="secondary">清空输入</button></div>
+          </fieldset>
+        </form>
+        <p id="market-import-message" role="status" aria-live="polite"></p>
+        <section id="market-preview-section" aria-labelledby="market-preview-heading" hidden>
+          <div class="panel-heading"><h2 id="market-preview-heading">2. 检查预览</h2><span id="market-preview-revision" class="muted"></span></div>
+          <p id="market-preview-summary"></p>
+          <ul id="market-preview-errors" class="market-errors" role="alert"></ul>
+          <div class="table-wrap market-scroll" tabindex="0" role="region" aria-label="导入预览表格"><table id="market-preview-table"><thead></thead><tbody></tbody></table></div>
+          <fieldset id="market-conflict-controls" hidden>
+            <label class="checkbox-label"><input id="market-replace" type="checkbox">我已核对预览中的价格冲突，允许替换</label>
+            <label>替换依据<textarea id="market-replace-reason" maxlength="2000" rows="2" placeholder="填写更正依据；旧值与来源会保留在修订记录中。"></textarea></label>
+          </fieldset>
+          <p class="fine">冲突行按“原值 → 新值”显示，并保留原来源说明供核对。重复相同行会跳过；补齐缺失价格会保留原缺失原因的修订记录。已有有效价格不能被缺失行覆盖。</p>
+          <button id="market-commit" type="button" disabled>确认导入</button>
+        </section>
+      </section>
+      <section class="panel" aria-labelledby="market-library-heading">
+        <div class="panel-heading"><div><h2 id="market-library-heading">已保存行情</h2><p class="fine">仅显示实际已保存的行。没有记录的时间仍是未载入，不代表无成交或停牌。</p></div><button id="market-reload" type="button" class="secondary">刷新数据集</button></div>
+        <form id="market-browse-form" class="market-browse-grid">
+          <label>数据集<select id="market-dataset"><option value="">暂无已导入数据</option></select></label>
+          <label>开始日期（美东日历日）<input id="market-browse-start" type="date"></label>
+          <label>结束日期（美东日历日）<input id="market-browse-end" type="date"></label>
+          <button id="market-query" type="submit" class="secondary" disabled>查看行情</button>
+        </form>
+        <p id="market-dataset-description" class="fine"></p>
+        <p id="market-library-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap market-scroll" tabindex="0" role="region" aria-label="已保存行情表格"><table id="market-bars-table"><thead></thead><tbody></tbody></table></div>
+        <div class="market-pagination"><span id="market-page-info" class="muted"></span><div class="actions"><button id="market-prev" type="button" class="secondary" disabled>上一页</button><button id="market-next" type="button" class="secondary" disabled>下一页</button><button id="market-export" type="button" class="secondary" disabled>导出所选日期范围 CSV</button></div></div>
+        <p class="fine">分钟范围按美东日历日期筛选，夜盘不自动归入下一交易日。每页最多 200 行；单次 CSV 导出最多 5,000 行，超过时请缩小上方日期范围。导出包含来源信息，可分批重新导入（每批最多 500 行，来源说明须一致）。</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

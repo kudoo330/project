@@ -1,5 +1,6 @@
 import {test,expect,request as makeRequest} from '@playwright/test';
 import {pbkdf2Sync} from 'node:crypto';
+import calendar from '../../src/calendar.json' with {type:'json'};
 const origin='http://127.0.0.1:8787';
 const headers={Origin:origin};
 const prefix='LOCAL-VERIFICATION-';
@@ -223,32 +224,36 @@ test('manual reference correction preserves close data and actual price, require
 test('admin confirms and removes dated suspensions across strategies without changing prices; viewer cannot mark',async({page})=>{
  const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});
  expect((await c.post('/api/login',{data:{username:'admin',password:'local-test-admin-only'}})).ok()).toBeTruthy();
+ const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10),earliest=new Date(Date.now()+8*3600000-2*86400000).toISOString().slice(0,10);
+ const day=calendar.filter((d:string)=>d<today&&d>=earliest).at(-1);
+ test.skip(!day,'No completed trading day in the API two-day entry window');
+ const nextDay=calendar[calendar.indexOf(day!)+1];
  const strategies=await(await c.get('/api/strategies')).json();
- const rows=strategies.filter((s:any)=>!s.archived).slice(0,2).map((s:any)=>({strategy_id:s.id,symbol:'600802.SH',name:'LOCAL-SUSPENSION-FIXTURE',buy_time:'2026-10-19T09:47:00',actual_price:10}));
+ const rows=strategies.filter((s:any)=>!s.archived).slice(0,2).map((s:any)=>({strategy_id:s.id,symbol:'600802.SH',name:'LOCAL-SUSPENSION-FIXTURE',buy_time:day+'T09:47:00',actual_price:10}));
  const response=await c.post('/api/records',{data:{request_id:crypto.randomUUID(),rows}});expect(response.ok()).toBeTruthy();
  let records=(await(await c.get('/api/records')).json()).records.filter((r:any)=>r.name==='LOCAL-SUSPENSION-FIXTURE');
  try{
   await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
   await expect(page).toHaveURL(/\/app/);await page.getByRole('button',{name:'600802.SH',exact:true}).first().click();
-  const dayRow=()=>page.locator('#detail-content tr').filter({has:page.locator('td').filter({hasText:/^2026-10-19$/})});
+  const dayRow=()=>page.locator('#detail-content tr').filter({has:page.locator('td').filter({hasText:new RegExp('^'+day+'$')})});
   page.once('dialog',d=>d.accept('LOCAL TEST: verified suspension notice'));
   await dayRow().getByRole('button',{name:'标记停牌',exact:true}).click();
   await expect(dayRow().getByRole('button',{name:'撤销停牌',exact:true})).toBeVisible();
   records=(await(await c.get('/api/records')).json()).records.filter((r:any)=>r.name==='LOCAL-SUSPENSION-FIXTURE');
   expect(records.length).toBe(2);
-  for(const r of records){expect(r.actual_price).toBe(10);expect(r.tracking.window[0].state).toBe('停牌');expect(r.tracking.window[0].value).toBeNull();expect(r.tracking.window[1].date).toBe('2026-10-20');}
+  for(const r of records){expect(r.actual_price).toBe(10);expect(r.tracking.window[0].state).toBe('停牌');expect(r.tracking.window[0].value).toBeNull();expect(r.tracking.window[1].date).toBe(nextDay);}
   await expect(page.locator('#records-table tbody').getByText('停牌',{exact:true})).toHaveCount(2);
   const viewer=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});
   await viewer.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});
-  expect((await viewer.post('/api/suspensions',{data:{symbol:'600802.SH',date:'2026-10-19',suspended:false,reason:'test'}})).status()).toBe(403);await viewer.dispose();
+  expect((await viewer.post('/api/suspensions',{data:{symbol:'600802.SH',date:day,suspended:false,reason:'test'}})).status()).toBe(403);await viewer.dispose();
   page.once('dialog',d=>d.accept('LOCAL TEST: remove suspension'));
   await dayRow().getByRole('button',{name:'撤销停牌',exact:true}).click();
   await expect(dayRow().getByRole('button',{name:'标记停牌',exact:true})).toBeVisible();
   records=(await(await c.get('/api/records')).json()).records.filter((r:any)=>r.name==='LOCAL-SUSPENSION-FIXTURE');
   for(const r of records){expect(r.tracking.window[0].state).not.toBe('停牌');expect(r.actual_price).toBe(10);}
-  const bar={date:'2026-10-19',open:10,high:11,low:9,close:10.5,volume:100};
+  const bar={date:day,open:10,high:11,low:9,close:10.5,volume:100};
   expect((await c.post('/api/import-closes',{data:{quotes:[{symbol:'600802.SH',bars:[bar],secondary:[bar],secondaryProvider:'腾讯',fetchedAt:new Date().toISOString(),evidence:{source:'LOCAL TEST fixture'}}]}})).ok()).toBeTruthy();
-  expect((await c.post('/api/suspensions',{data:{symbol:'600802.SH',date:'2026-10-19',suspended:true,reason:'contradictory fixture'}})).status()).toBe(400);
+  expect((await c.post('/api/suspensions',{data:{symbol:'600802.SH',date:day,suspended:true,reason:'contradictory fixture'}})).status()).toBe(400);
   records=(await(await c.get('/api/records')).json()).records.filter((r:any)=>r.name==='LOCAL-SUSPENSION-FIXTURE');
   for(const r of records){expect(r.tracking.window[0].state).not.toBe('停牌');expect(r.tracking.window[0].rawClose).toBe(10.5);}
  }finally{
