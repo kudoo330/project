@@ -15,6 +15,7 @@ import {minuteCloseSource} from './reference-source';
 import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
 import {researchDataApi} from './research-data';
+import {researchDownloadsApi} from './research-downloads';
 import {amdBacktestApi} from './amd-backtest-api';
 import {researchChartApi} from './research-chart';
 import {researchMarkersApi} from './research-markers';
@@ -61,6 +62,7 @@ async function api(request:Request,env:Env,url:URL) {
   // records, summaries, exports and all research endpoints are denied server-side.
   if(user.role!=='admin'&&!(url.pathname==='/api/quote'&&request.method==='GET'))return json({error:'此账号仅可访问股价对比'},403);
   if(url.pathname==='/api/users'||url.pathname.startsWith('/api/users/'))return userManagementApi(request,env,url,user);
+  if(url.pathname==='/api/research-downloads'||url.pathname.startsWith('/api/research-downloads/'))return researchDownloadsApi(request,env,url,user.username);
   if(url.pathname==='/api/research/backtests'||url.pathname.startsWith('/api/research/backtests/'))return amdBacktestApi(request,env,url,user.username);
   if(url.pathname==='/api/research/chart')return researchChartApi(request,env,url);
   if(url.pathname==='/api/research'||url.pathname.startsWith('/api/research/'))return researchMarkersApi(request,env,url,user.username);

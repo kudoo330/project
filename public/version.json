@@ -1,5 +1,5 @@
 {
-  "version": "0.8.1",
+  "version": "0.8.2",
   "features": [
     "strategy-analysis-scope",
     "scheduled-close-sync",
@@ -37,7 +37,8 @@
     "immutable-backtest-snapshots",
     "next-minute-simulated-fills",
     "cost-and-liquidity-scenarios",
-    "separate-amd-quotes-and-strategy-pages"
+    "separate-amd-quotes-and-strategy-pages",
+    "private-prepared-market-downloads"
   ],
   "date": "2026-10-28"
 }

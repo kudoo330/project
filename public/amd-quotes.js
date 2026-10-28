@@ -67,4 +67,6 @@ $('#research-goto-form').onsubmit=async event=>{event.preventDefault();try{const
 
 
 async function init(){try{const user=await api('/api/me');if(user.role!=='admin')throw new Error('此页面仅供管理员使用');$('#research-user').textContent=user.username+' · 管理员';$('#research-access').hidden=true;$('#research-content').hidden=false;state.chart=createResearchChart($('#research-chart'),{detailElement:$('#research-chart-detail')});state.chart.setTheme(theme());const data=await api('/api/research-data/datasets');state.datasets=data.datasets||[];populateDatasets(true);await loadChart();}catch(error){message('#research-access',error.message,true);$('#research-access').hidden=false;}}
+async function loadDownloads(){try{const result=await api('/api/research-downloads');const target=$('#research-downloads');target.replaceChildren();for(const file of result.files||[]){if(!/^download_[a-f0-9]{64}$/.test(file.id))continue;const link=node('a',file.title,'button secondary');link.href='/api/research-downloads/'+file.id;link.download=file.filename;target.append(link);}message('#research-downloads-status',target.childElementCount?'点击下载ZIP压缩包，解压后查看CSV行情。':'暂时没有准备好的下载文件。');}catch(error){message('#research-downloads-status',error.message,true);}}
 init();
+loadDownloads();
