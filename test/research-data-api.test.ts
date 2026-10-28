@@ -4,6 +4,48 @@ import {readFile} from 'node:fs/promises';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {researchDataApi} from '../src/research-data';
 
+test('dataset deletion is revision-checked, audited, atomic, reference-safe and replayable',async()=>{
+  const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-10-16',d1Databases:{DB:'research-delete-test'}}));
+  try {
+    const db=await mf.getD1Database('DB');
+    for(const name of ['0001_initial.sql','0005_research_data.sql','0006_research_markers.sql']) {
+      const sql=await readFile(new URL('../migrations/'+name,import.meta.url),'utf8');
+      await db.batch(sql.replace(/--[^\n]*/g,'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>db.prepare(s)));
+    }
+    const call=async(path:string,body?:any,method=body?'POST':'GET')=>{
+      const url=new URL('https://research.test/api/research-data'+path);
+      return researchDataApi(new Request(url,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})}),{DB:db} as any,url,'admin:delete-test');
+    };
+    const ids:Record<string,string>={};
+    for(const symbol of ['AMD.US','AMDL.US']) {
+      const payload={dataset:{symbol,period:'1m',provider:'Synthetic deletion fixture',adjustment:'none',time_zone:'America/New_York',currency:'USD'},source_note:'Synthetic test, not actual market data',rows:[{time:'2026-10-27T13:30:00Z',open:10,high:12,low:9,close:11,volume:10}]};
+      const p:any=await(await call('/preview',payload)).json();
+      assert.equal((await call('/import',{...payload,request_id:crypto.randomUUID(),preview_token:p.preview_token,expected_revision:p.revision})).status,201);ids[symbol]=p.dataset_id;
+    }
+    const target=ids['AMDL.US'],path='/datasets/'+target,body={request_id:crypto.randomUUID(),expected_revision:1,reason:'User requests removal of AMDL market data'};
+    const amdBefore=(await db.prepare('SELECT * FROM research_market_bars WHERE dataset_id=?').bind(ids['AMD.US']).all()).results;
+    assert.equal((await call(path,{...body,reason:''},'DELETE')).status,400);
+    assert.equal((await call(path,{...body,expected_revision:2},'DELETE')).status,409);
+    await db.prepare("INSERT INTO research_annotation_groups VALUES('fixture','Fixture','fixture','#257f77',0,1,'now','now')").run();
+    await db.prepare(`INSERT INTO research_annotations(id,group_id,symbol,action,time_utc,original_time,source_type,notes,status,source_note,reference_json,revision,created_at,updated_at) VALUES('ref','fixture','AMDL.US','BUY','2026-10-27T13:30:00Z','2026-10-27T13:30:00Z','manual_hypothesis','','candidate','Synthetic fixture',?,1,'now','now')`).bind(JSON.stringify({dataset_id:target})).run();
+    assert.equal((await call(path,body,'DELETE')).status,409);
+    assert.equal((await db.prepare('SELECT COUNT(*) n FROM research_market_bars WHERE dataset_id=?').bind(target).first<any>())!.n,1);
+    await db.prepare("DELETE FROM research_annotations WHERE id='ref'").run();
+    await db.prepare("CREATE TRIGGER deletion_rollback BEFORE DELETE ON research_market_datasets WHEN OLD.symbol='AMDL.US' BEGIN SELECT RAISE(ABORT,'synthetic rollback'); END").run();
+    assert.equal((await call(path,body,'DELETE')).status,503);
+    assert.equal((await db.prepare("SELECT COUNT(*) n FROM audit WHERE action='delete_research_dataset'").first<any>())!.n,0);
+    for(const table of ['research_market_bars','research_market_bar_revisions','research_market_import_batches'])assert.equal((await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE dataset_id=?`).bind(target).first<any>())!.n,1,'final failure must roll back child deletions');
+    await db.prepare('DROP TRIGGER deletion_rollback').run();
+    const result=await call(path,body,'DELETE');assert.equal(result.status,200);assert.equal((await result.json() as any).ok,true);
+    for(const table of ['research_market_bars','research_market_bar_revisions','research_market_import_batches'])assert.equal((await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE dataset_id=?`).bind(target).first<any>())!.n,0);
+    assert.equal(await db.prepare('SELECT id FROM research_market_datasets WHERE id=?').bind(target).first(),null);
+    const audit=(await db.prepare("SELECT actor,previous_value FROM audit WHERE action='delete_research_dataset'").first<any>())!;assert.equal(audit.actor,'admin:delete-test');assert.equal(JSON.parse(audit.previous_value).dataset.symbol,'AMDL.US');
+    assert.equal((await(await call(path,body,'DELETE')).json() as any).replayed,true);
+    assert.equal((await call(path,{...body,reason:'different request body'},'DELETE')).status,409);
+    assert.deepEqual((await db.prepare('SELECT * FROM research_market_bars WHERE dataset_id=?').bind(ids['AMD.US']).all()).results,amdBefore);
+  } finally {await mf.dispose();}
+});
+
 test('research D1 preview, atomic import, conflict replacement, fill, audit and replay',async()=>{
   const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-10-16',d1Databases:{DB:'research-api-test'}}));
   try {

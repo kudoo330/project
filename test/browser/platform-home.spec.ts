@@ -4,9 +4,9 @@ test('login lands on two-module platform, canonical aliases render and mobile re
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();
  await expect(page).toHaveURL(/\/home$/);await expect(page.getByRole('heading',{name:'私人股票研究平台'})).toBeVisible();
- await expect(page.locator('#backtest-entry')).toBeVisible();await expect(page.locator('#platform-admin')).toBeVisible();
+ await expect(page.locator('#backtest-entry')).toBeVisible();await expect(page.locator('#backtest-entry')).toContainText('AMD 研究');await expect(page.locator('#backtest-entry')).not.toContainText('AMDL');await expect(page.locator('#platform-admin')).toBeVisible();
  await expect(page.locator('.platform-modules > a').first()).toHaveAttribute('id','ashare-entry');await expect(page.locator('#ashare-entry')).toHaveAttribute('href','/app');await page.locator('#ashare-entry').click();await expect(page).toHaveURL(/\/app$/);await expect(page.getByRole('heading',{name:'买入追踪',exact:true})).toBeVisible();
- await page.getByRole('link',{name:'平台首页'}).click();await page.locator('#backtest-entry').click();await expect(page).toHaveURL(/\/backtest$/);await expect(page.locator('#research-content')).toBeVisible();await expect(page.getByRole('heading',{name:'AMD / AMDL 研究',exact:true})).toBeVisible();
+ await page.getByRole('link',{name:'平台首页'}).click();await page.locator('#backtest-entry').click();await expect(page).toHaveURL(/\/backtest$/);await expect(page.locator('#research-content')).toBeVisible();await expect(page.getByRole('heading',{name:'AMD 研究',exact:true})).toBeVisible();
  const response=await page.request.get('/backtest');expect(response.headers()['content-security-policy']).toContain('sha256-3pRED1tOXas1FXFoPb9TGCjmYe9XQsmO9OV23khV2nY=');
  await page.goto('/home');await page.screenshot({path:'/workspace/scratch/platform-home-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/platform-home-mobile.png',fullPage:true});expect(errors).toEqual([]);
 });

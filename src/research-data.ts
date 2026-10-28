@@ -60,6 +60,42 @@ const publicPreview = ({ existing, ...value }: Awaited<ReturnType<typeof preview
   }) };
 };
 
+async function deleteDataset(db: D1Database, id: string, value: any, actor: string) {
+  if (!value || !/^[A-Za-z0-9_-]{16,80}$/.test(value.request_id ?? '') || !Number.isSafeInteger(value.expected_revision) || value.expected_revision < 1) throw new InputError('删除需有效请求ID和当前数据集版本');
+  if (typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 2000 || /[\u0000-\u001f]/.test(value.reason)) throw new InputError('删除需填写有效依据');
+  const requestHash = await researchDigest({ id, expected_revision: value.expected_revision, reason: value.reason.trim() });
+  const auditId = 'research-delete-' + value.request_id;
+  const replay = async () => {
+    const prior = await db.prepare('SELECT action,previous_value FROM audit WHERE id=?').bind(auditId).first<{action:string;previous_value:string}>();
+    if (!prior) return null;
+    const saved = JSON.parse(prior.previous_value);
+    return prior.action === 'delete_research_dataset' && saved.request_hash === requestHash
+      ? json({ ok:true, replayed:true, dataset_id:id, counts:saved.counts })
+      : json({ error:'删除请求ID已用于其他内容', code:'request_id_conflict' },409);
+  };
+  const prior = await replay(); if (prior) return prior;
+  const dataset = await datasetById(db,id);
+  if (!dataset) return json({ error:'数据集不存在' },404);
+  if (dataset.revision !== value.expected_revision) return json({ error:'数据集版本已变化，请刷新后再删除',code:'stale_dataset' },409);
+  const counts: Record<string,number> = {};
+  for (const table of ['research_market_bars','research_market_bar_revisions','research_market_import_batches']) counts[table] = (await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE dataset_id=?`).bind(id).first<{n:number}>())!.n;
+  const stamp = new Date().toISOString(), snapshot = { dataset, counts, reason:value.reason.trim(), request_hash:requestHash, deleted_at:stamp };
+  const gate = 'EXISTS(SELECT 1 FROM audit WHERE id=?)';
+  const references = `NOT EXISTS(SELECT 1 FROM research_annotations WHERE json_extract(reference_json,'$.dataset_id')=?)`;
+  // One transaction gates every child deletion on a revision-checked audit
+  // insertion. A stale request or a referenced source removes no rows.
+  try {
+    const result = await db.batch([
+      db.prepare(`INSERT INTO audit(id,record_id,actor,action,previous_value,created_at) SELECT ?,?,?,'delete_research_dataset',?,? FROM research_market_datasets WHERE id=? AND revision=? AND ${references}`)
+        .bind(auditId,id,actor,JSON.stringify(snapshot),stamp,id,value.expected_revision,id),
+      ...['research_market_bar_revisions','research_market_bars','research_market_import_batches'].map(table=>db.prepare(`DELETE FROM ${table} WHERE dataset_id=? AND ${gate}`).bind(id,auditId)),
+      db.prepare(`DELETE FROM research_market_datasets WHERE id=? AND revision=? AND ${gate}`).bind(id,value.expected_revision,auditId),
+    ]);
+    if (!result[0].meta.changes) return await replay() ?? json({ error:'数据集已变化或仍被研究标记引用，未删除任何数据',code:'dataset_delete_blocked' },409);
+    return json({ ok:true, replayed:false, dataset_id:id, counts });
+  } catch (error) { const saved = await replay(); if (saved) return saved; throw error; }
+}
+
 async function commit(db: D1Database, value: any, input: ResearchInput, actor: string) {
   if (typeof value.request_id !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(value.request_id)) throw new InputError('需要16至100位有效提交请求ID');
   if (!Number.isSafeInteger(value.expected_revision) || value.expected_revision < 0) throw new InputError('缺少有效的数据集版本，请重新预览');
@@ -180,6 +216,8 @@ async function readBars(db: D1Database, url: URL, exporting = false) {
 export async function researchDataApi(request: Request, env: Env, url: URL, actor: string): Promise<Response> {
   try {
     const path = url.pathname.slice('/api/research-data'.length);
+    const deletion = path.match(/^\/datasets\/(market_[a-f0-9]{64})$/);
+    if (request.method === 'DELETE' && deletion) return await deleteDataset(env.DB,deletion[1],await readBody(request),actor);
     if (request.method === 'GET' && path === '/datasets') {
       const datasets = (await env.DB.prepare(`SELECT d.*,COUNT(b.time_key) AS row_count,
         COALESCE(SUM(b.status='available'),0) AS available_count,COALESCE(SUM(b.status<>'available'),0) AS missing_count,

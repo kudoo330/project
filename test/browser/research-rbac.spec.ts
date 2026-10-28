@@ -26,7 +26,7 @@ test('ordinary users cannot read private A-share records, AMD research, exports 
     expect((await c.get('/app',{maxRedirects:0})).headers().location).toBe(origin+'/comparison');
     expect((await c.get('/api/account/password')).status()).toBe(200);
     expect((await c.get('/api/quote?symbol=invalid')).status()).toBe(400);
-    expect((await c.post('/api/research/groups',{data:{name:'not-authorized'}})).status()).toBe(403);
+    expect((await c.post('/api/research/groups',{data:{name:'not-authorized'}})).status()).toBe(403);expect((await c.delete('/api/research-data/datasets/market_'+'a'.repeat(64),{data:{request_id:crypto.randomUUID(),expected_revision:1,reason:'not authorized'}})).status()).toBe(403);
     await c.post('/api/logout',{data:{}});
     expect((await c.post('/api/login',{data:{username:'admin',password:'isolated-admin-password'}})).status()).toBe(200);
     for(const path of ['/api/records','/api/research-data/datasets','/api/research/groups','/api/research/markers','/api/users'])expect((await c.get(path)).status(),path).toBe(200);

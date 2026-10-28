@@ -46,8 +46,8 @@ test('CSV preview is read-only, missing stays empty, import persists and range e
   const exporting=page.waitForRequest(request=>request.url().includes('/api/research-data/export?'));const downloaded=page.waitForEvent('download');await page.locator('#market-export').click();
   const exportRequest=await exporting;expect(new URL(exportRequest.url()).searchParams.get('start')).toBe('2026-10-20');expect(new URL(exportRequest.url()).searchParams.get('end')).toBe('2026-10-20');
   const download=await downloaded,contents=await readFile((await download.path())!,'utf8');expect(contents).toContain('source_note');expect(contents).toContain('AMD.US');
-  await page.locator('#market-symbol').selectOption('AMDL.US');await page.locator('#market-paste').fill(contents);await page.locator('#market-preview').click();
-  await expect(page.locator('#market-preview-summary')).toContainText('相同 2');await expect(page.locator('#market-symbol')).toHaveValue('AMD.US');
+  await expect(page.locator('#market-symbol option')).toHaveCount(1);await page.locator('#market-period').selectOption('1d');await page.locator('#market-paste').fill(contents);await page.locator('#market-preview').click();
+  await expect(page.locator('#market-preview-summary')).toContainText('相同 2');await expect(page.locator('#market-symbol')).toHaveValue('AMD.US');await expect(page.locator('#market-period')).toHaveValue('1m');
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:'/workspace/scratch/manual-market-mobile.png',fullPage:true});
   await page.locator('#market-theme').click();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');

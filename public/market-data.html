@@ -10,7 +10,7 @@
 </head>
 <body>
   <main class="market-page">
-    <header class="topbar"><a href="/app.html">← 返回A股工作台</a><a href="/backtest">打开 AMD / AMDL K线研究 →</a><span id="market-identity">正在检查登录状态…</span></header>
+    <header class="topbar"><a href="/app.html">← 返回A股工作台</a><a href="/backtest">打开 AMD K线研究 →</a><span id="market-identity">正在检查登录状态…</span></header>
     <div class="page-heading"><div><p class="eyebrow">HISTORICAL MARKET DATA</p><h1>历史行情导入</h1><p class="muted">先保留缺口，取得数据后再补齐。</p></div><button id="market-theme" type="button" class="secondary">切换深色 / 浅色</button></div>
     <p id="market-access" role="status" aria-live="polite">正在检查管理员权限…</p>
     <div id="market-content" hidden>
@@ -20,7 +20,7 @@
         <form id="market-form" novalidate>
           <fieldset id="market-inputs">
             <div class="form-grid market-metadata">
-              <label>股票<select id="market-symbol" name="symbol"><option value="AMD.US">AMD · AMD.US</option><option value="AMDL.US">AMDL · AMDL.US</option></select></label>
+              <label>股票<select id="market-symbol" name="symbol"><option value="AMD.US">AMD · AMD.US</option></select></label>
               <label>周期<select id="market-period" name="period"><option value="1m">1 分钟</option><option value="1d">日线</option></select></label>
               <label>行情来源<input id="market-provider" name="provider" maxlength="80" required placeholder="例如：Longbridge 或人工核验来源"></label>
               <label>复权方式<select id="market-adjustment" name="adjustment"><option value="none">不复权</option><option value="forward">前复权</option></select></label>
