@@ -23,6 +23,8 @@ test('backtest API persists immutable snapshots, exact replay, old source correc
   await db.prepare('UPDATE research_market_bars SET close=49 WHERE dataset_id=?').bind(id).run();await db.prepare('UPDATE research_market_datasets SET revision=2 WHERE id=?').bind(id).run();
   assert.deepEqual((await(await call('/'+body.request_id)).json() as any).results,first.results);
   const chart:any=await(await call('/'+body.request_id+'/chart?date=2026-10-27&timeframe=1m')).json();assert.equal(chart.immutable,true);assert.equal(chart.bars[0].close,50,'saved chart must not read corrected current source');
+  const continuous:any=await(await call('/'+body.request_id+'/chart?start=2026-10-01&end=2026-10-27&timeframe=15m&continuous=1')).json();assert.equal(continuous.immutable,true);assert.equal(continuous.range.page_end,'2026-10-14');assert.equal(continuous.next_cursor,'2026-10-15');
+  const final:any=await(await call('/'+body.request_id+'/chart?start=2026-10-01&end=2026-10-27&timeframe=15m&continuous=1&cursor=2026-10-15')).json();assert.equal(final.next_cursor,null);assert.equal(final.bar_rows.find((r:any[])=>r[final.bar_columns.indexOf('close')]===50)[final.bar_columns.indexOf('close')],50,'continuous snapshots remain immutable');
   assert.equal((await(await call('')).json() as any).runs.length,1);
   const amdl=await source('AMDL.US');assert.equal((await call('',{...body,minute_dataset_id:amdl,request_id:crypto.randomUUID()})).status,400);
   assert.equal((await call('',{...body,strategies:['D03'],request_id:crypto.randomUUID()})).status,400);

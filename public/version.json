@@ -1,5 +1,5 @@
 {
-  "version": "0.8.2",
+  "version": "0.8.3",
   "features": [
     "strategy-analysis-scope",
     "scheduled-close-sync",
@@ -38,7 +38,9 @@
     "next-minute-simulated-fills",
     "cost-and-liquidity-scenarios",
     "separate-amd-quotes-and-strategy-pages",
-    "private-prepared-market-downloads"
+    "private-prepared-market-downloads",
+    "continuous-amd-and-snapshot-chart-navigation",
+    "selectable-market-csv-range"
   ],
   "date": "2026-10-28"
 }

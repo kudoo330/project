@@ -1,8 +1,8 @@
 import type {Env} from './types';
 import {normalizeConfig,runBacktest,MANIFESTS,ENGINE_VERSION,DEFAULT_PARAMETERS,type BacktestInput,type InputBar} from './amd-backtest';
-import {buildResearchChart} from './research-chart';
+import {buildResearchChart,compactResearchChart} from './research-chart';
 import {addUSDate} from './us-market-calendar';
-import {researchDigest,type ResearchStatus} from './research-data-validation';
+import {researchDigest,validDate,type ResearchStatus} from './research-data-validation';
 const json=(v:unknown,status=200)=>Response.json(v,{status,headers:{'Cache-Control':'private, no-store'}});
 const columns='time_key AS time,trading_date AS date,open,high,low,close,volume,status,revision,verification,reason';
 async function readSnapshot(db:D1Database,id:unknown,period:string,start:string,end:string){
@@ -31,11 +31,15 @@ export async function amdBacktestApi(request:Request,env:Env,url:URL,actor:strin
   if(request.method==='GET'&&chartMatch){
    const run=await env.DB.prepare('SELECT metadata_json FROM research_backtest_runs WHERE id=?').bind(chartMatch[1]).first<{metadata_json:string}>();if(!run)return json({error:'回测不存在'},404);
    const meta=JSON.parse(run.metadata_json),date=url.searchParams.get('date')??'',timeframe=url.searchParams.get('timeframe')??'1m';
-   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!['1m','5m'].includes(timeframe))throw new Error('需要有效日期及1m/5m周期');
-   const parts=(await env.DB.prepare("SELECT value_json FROM research_backtest_parts WHERE run_id=? AND kind='input' AND json_extract(value_json,'$.kind')='minutes' AND json_extract(value_json,'$.rows[0].date')<=? AND json_extract(value_json,'$.rows[#-1].date')>=? ORDER BY part").bind(chartMatch[1],date,date).all<{value_json:string}>()).results;
-   const rows=parts.flatMap(p=>JSON.parse(p.value_json).rows).filter((r:InputBar)=>r.date===date).map((r:InputBar)=>({...r,time_key:r.time,trading_date:r.date,status:r.status as ResearchStatus,reason:r.reason||(r.status==='available'?'':'快照缺价'),source_note:String(meta.minuteSource.provider)}));
-   const chart=buildResearchChart(meta.minuteSource,rows,{start:date,end:date,timeframe:timeframe as '1m'|'5m',sessions:meta.config.sessions,now:Date.parse(meta.config.end)});
-   return json({dataset:meta.minuteSource,timeframe,immutable:true,snapshotId:meta.snapshotId,...chart});
+   const start=url.searchParams.get('start')??date,end=url.searchParams.get('end')??date,cursor=url.searchParams.get('cursor'),continuous=url.searchParams.get('continuous')==='1';
+   if(!validDate(start)||!validDate(end)||start>end||!['1m','5m','15m','30m','60m'].includes(timeframe))throw new Error('需要有效日期范围及分钟K线周期');
+   if(cursor&&(!validDate(cursor)||cursor<start||cursor>end))throw new Error('快照分页日期无效');
+   const pageStart=cursor??start,pageEnd=[end,addUSDate(pageStart,continuous?13:0)].sort()[0];
+   const parts=(await env.DB.prepare("SELECT value_json FROM research_backtest_parts WHERE run_id=? AND kind='input' AND json_extract(value_json,'$.kind')='minutes' AND json_extract(value_json,'$.rows[0].date')<=? AND json_extract(value_json,'$.rows[#-1].date')>=? ORDER BY part").bind(chartMatch[1],pageEnd,pageStart).all<{value_json:string}>()).results;
+   const rows=parts.flatMap(p=>JSON.parse(p.value_json).rows).filter((r:InputBar)=>r.date>=pageStart&&r.date<=pageEnd).map((r:InputBar)=>({...r,time_key:r.time,trading_date:r.date,status:r.status as ResearchStatus,reason:r.reason||(r.status==='available'?'':'快照缺价'),source_note:String(meta.minuteSource.provider)}));
+   const chart=buildResearchChart(meta.minuteSource,rows,{start:pageStart,end:pageEnd,timeframe:timeframe as '1m'|'5m',sessions:meta.config.sessions,now:Date.parse(meta.config.end)});
+   const response={dataset:meta.minuteSource,timeframe,immutable:true,snapshotId:meta.snapshotId,range:{start,end,page_start:pageStart,page_end:pageEnd},next_cursor:pageEnd<end?addUSDate(pageEnd,1):null,...chart};
+   return json(continuous?compactResearchChart(response):response);
   }
   const match=path.match(/^\/([A-Za-z0-9_-]{16,100})(\/export)?$/);
   if(request.method==='GET'&&match){

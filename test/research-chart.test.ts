@@ -127,5 +127,8 @@ test('real D1 chart route paginates calendar windows, reports gaps and rejects d
     assert.equal((await call('start=2027-01-05&end=2027-01-09')).status,422);
     assert.equal((await call('start=2026-01-05&end=2026-01-09&sessions=overnight')).status,400);
     assert.equal((await call('start=2026-01-05&end=2026-01-09&cursor=2026-01-01')).status,400);
+    const compact:any=await(await call('start=2026-01-05&end=2026-01-21&timeframe=1m&sessions=regular&continuous=1')).json();
+    assert.equal(compact.range.page_end,'2026-01-18');assert.equal(compact.next_cursor,'2026-01-19');assert.equal(compact.bars,undefined);assert.equal(compact.bar_rows.length,390*10);
+    assert.equal(compact.bar_rows[0][compact.bar_columns.indexOf('close')],101);assert.equal(compact.coverage.source_revision,7);
   } finally {await mf.dispose();}
 });

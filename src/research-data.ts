@@ -1,5 +1,6 @@
 import type { Env } from './types';
 import { csvCell } from './domain';
+import {researchRangeExport} from './research-range-export';
 import {
   RESEARCH_MAX_ROWS, RESEARCH_STATUSES, normalizeResearchTime, validDate,
   validateResearchInput, researchDatasetId, researchDigest, planResearchRows, researchPreviewToken,
@@ -227,6 +228,7 @@ export async function researchDataApi(request: Request, env: Env, url: URL, acto
     }
     if (request.method === 'GET' && path === '/bars') return await readBars(env.DB,url);
     if (request.method === 'GET' && path === '/export') return await readBars(env.DB,url,true);
+    if (request.method === 'GET' && path === '/export-range') return await researchRangeExport(env,url);
     if (request.method === 'POST' && ['/preview','/import'].includes(path)) {
       const value = await readBody(request), checked = validateResearchInput(value);
       if (!checked.input) return json({ valid: false, error: '导入内容未通过校验', errors: checked.errors }, path === '/preview' ? 200 : 400);

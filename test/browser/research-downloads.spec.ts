@@ -14,6 +14,7 @@ test('admin can download a private quote package; anonymous/viewer and unsafe wr
  const saved=await page.request.post(path,{headers,data});expect(saved.ok()).toBeTruthy();const file=(await saved.json()).file;
  expect((await request.get(file.url)).status()).toBe(401);
  await page.goto('/backtest');await expect(page.locator('#research-content')).toBeVisible();
+ await page.locator('#research-downloads-title').click();await page.getByText('已准备的完整行情包',{exact:true}).click();
  const link=page.locator('#research-downloads a').filter({hasText:data.title});await expect(link).toBeVisible();
  const [download]=await Promise.all([page.waitForEvent('download'),link.click()]);expect(download.suggestedFilename()).toBe(data.filename);expect(await download.failure()).toBeNull();
  const response=await page.request.get(file.url);expect(response.ok()).toBeTruthy();expect(await response.body()).toEqual(bytes);

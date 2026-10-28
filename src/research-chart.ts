@@ -29,6 +29,14 @@ const json = (value: unknown, status = 200) => Response.json(value, { status, he
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
 const minDate = (a: string, b: string) => a < b ? a : b;
 
+// Continuous views transfer shared notes and metadata once, rather than once per minute.
+const COMPACT_COLUMNS=['time_utc','end_utc','trading_date','session','open','high','low','close','volume','status','reason','expected_minutes','available_minutes','missing_minutes','no_eligible_minutes','unknown_volume_minutes','row_revisions','complete','short_window','bar_revision','source_note_index'] as const;
+export function compactResearchChart<T extends {bars:ResearchChartBar[]}>(value:T){
+ const notes:string[]=[],indexes=new Map<string,number>();
+ const bar_rows=value.bars.map(bar=>{let index=indexes.get(bar.source_note);if(index===undefined){index=notes.length;indexes.set(bar.source_note,index);notes.push(bar.source_note);}return COMPACT_COLUMNS.map(key=>key==='source_note_index'?index:bar[key]??null);});
+ const {bars,...metadata}=value;return {...metadata,bar_columns:COMPACT_COLUMNS,bar_rows,source_notes:notes};
+}
+
 function newBar(dataset: ChartDataset, day: string, session: USSession, timeframe: ResearchTimeframe, start: number, end: number, expected: number): ResearchChartBar {
   return { time: timeframe === '1d' ? day : iso(start), time_utc: iso(start), end_utc: iso(end),
     interval_start_utc:iso(start), interval_end_utc:iso(end), trading_date:day,session,timeframe,
@@ -154,12 +162,14 @@ export async function researchChartApi(request: Request, env: Env, url: URL): Pr
     if(!sessions.length||sessions.some(session=>!SESSION_NAMES.includes(session))||new Set(sessions).size!==sessions.length)return json({error:'请选择盘前、常规或盘后时段'},400);
     const cursor=url.searchParams.get('cursor');
     if(cursor&&(!validDate(cursor)||cursor<start||cursor>end))return json({error:'分页日期不在所选范围内'},400);
-    const pageDays=timeframe==='1d'?366:timeframe==='1m'?1:3;
+    const continuous=url.searchParams.get('continuous')==='1';
+    const pageDays=timeframe==='1d'?366:continuous?14:timeframe==='1m'?1:3;
     const pageStart=cursor??start,pageEnd=minDate(end,addUSDate(pageStart,pageDays-1));
     const dataset=await env.DB.prepare('SELECT * FROM research_market_datasets WHERE id=?').bind(id).first<ChartDataset>();
     if(!dataset)return json({error:'行情数据集不存在'},404);
     if((timeframe==='1d')!==(dataset.period==='1d'))return json({error:'日线需选择独立日线数据集；其他周期需选择1分钟数据集',code:'dataset_period_mismatch'},400);
-    // A viewport has at most 3*1440 raw minute rows. Read them without LIMIT so
+    // Continuous clients read bounded 14-day chunks and join them before display.
+    // Read without LIMIT so
     // malformed/imported off-session rows never silently displace valid bars.
     const result=await env.DB.prepare('SELECT time_key,trading_date,open,high,low,close,volume,status,reason,source_note,revision,updated_at,verification FROM research_market_bars WHERE dataset_id=? AND trading_date>=? AND trading_date<=? ORDER BY time_key').bind(id,pageStart,pageEnd).all<ChartSourceRow>();
     // Metadata and rows are separate reads. Detect concurrent imports instead of
@@ -167,11 +177,12 @@ export async function researchChartApi(request: Request, env: Env, url: URL): Pr
     const final=await env.DB.prepare('SELECT revision FROM research_market_datasets WHERE id=?').bind(id).first<{revision:number}>();
     if(final?.revision!==dataset.revision)return json({error:'行情刚被修订，请重新加载此窗口',code:'dataset_changed'},409);
     const chart=buildResearchChart(dataset,result.results,{start:pageStart,end:pageEnd,timeframe:timeframe as ResearchTimeframe,sessions});
-    return json({dataset,timeframe,time_zone:'America/New_York',sessions,
+    const response={dataset,timeframe,time_zone:'America/New_York',sessions,
       range:{start,end,page_start:pageStart,page_end:pageEnd},...chart,
       next_cursor:pageEnd<end?addUSDate(pageEnd,1):null,
-      limits:{minute_page_calendar_days:timeframe==='1m'?1:3,daily_page_calendar_days:366},
+      limits:{minute_page_calendar_days:continuous?14:timeframe==='1m'?1:3,daily_page_calendar_days:366},
       data_access:{mode:'persisted_only',automatic_download:false,manual_import_url:'/market-data',reason:'历史行情缺口可通过手动导入补充'},
-    });
+    };
+    return json(continuous?compactResearchChart(response):response);
   } catch(error) { return json({error:(error as Error).message},400); }
 }

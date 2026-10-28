@@ -1,4 +1,5 @@
 /* Interactive, read-only price chart. Research marks never imply broker fills. */
+import {defaultChartRange,boundedChartRange,zoomChartRange} from './chart-navigation.js';
 const SESSION_LABELS={pre:'盘前',regular:'常规',post:'盘后'};
 const STATUS_LABELS={available:'可用',partial:'不完整',missing:'缺失',not_entitled:'权限受限',request_failed:'获取失败',no_eligible_trade:'无合格成交'};
 const PALETTE=['#237f72','#7865bd','#b76b35','#3e77b6','#b6567b','#829344'];
@@ -20,9 +21,10 @@ export function createResearchChart(container,options={}){
   if(!lib?.createChart)throw new Error('K线组件未加载，请刷新页面');
   let destroyed=false,timeZone='America/New_York',timeframe='1m',rows=[],marks=[],groups=[],datasetKey='',suppressRange=false,frame=0,selectedId=null,dense=false;
   let rowByTime=new Map(),rowByDate=new Map(),displayMarks=new Map(),lastRangeKey='';
+  const controls=options.navigation,manual=Boolean(controls);
   container.style.position='relative';container.style.minWidth='0';
   const host=document.createElement('div');host.style.cssText='position:absolute;inset:0;min-width:0;';
-  host.setAttribute('aria-label','价格K线与成交量，支持拖动、缩放和点击研究时点');
+  host.setAttribute('aria-label',manual?'价格K线与成交量，使用按钮缩放，拖动或滑条查看日期':'价格K线与成交量，支持拖动、缩放和点击研究时点');
   const bands=document.createElementNS('http://www.w3.org/2000/svg','svg');
   bands.setAttribute('aria-hidden','true');bands.style.cssText='position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden;';
   container.append(host,bands);
@@ -31,10 +33,10 @@ export function createResearchChart(container,options={}){
     layout:{background:{type:'solid',color:'#ffffff'},textColor:'#788490',fontFamily:'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',fontSize:11,attributionLogo:true},
     grid:{vertLines:{visible:false},horzLines:{color:'#e5e9ed'}},
     rightPriceScale:{borderVisible:false,scaleMargins:{top:.12,bottom:.27}},
-    timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false,minBarSpacing:.5,rightOffset:5},
+    timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false,minBarSpacing:manual ? .001 : .5,rightOffset:5,lockVisibleTimeRangeOnResize:manual},
     crosshair:{mode:lib.CrosshairMode.Normal,vertLine:{color:'#8b9aa5',style:lib.LineStyle.Dashed},horzLine:{color:'#8b9aa5',style:lib.LineStyle.Dashed}},
-    handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
-    handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true},
+    handleScroll:{mouseWheel:!manual,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+    handleScale:manual?false:{mouseWheel:true,pinch:true,axisPressedMouseMove:true},
     localization:{locale:'zh-CN',priceFormatter:price},
   });
   // US charts use green up / red down, independently from the A-share palette.
@@ -65,6 +67,7 @@ export function createResearchChart(container,options={}){
     shortDate=new Intl.DateTimeFormat('zh-CN',{timeZone,month:'2-digit',day:'2-digit'});
     yearDate=new Intl.DateTimeFormat('zh-CN',{timeZone,year:'numeric'});
     chart.applyOptions({localization:{timeFormatter:fullTime},timeScale:{tickMarkFormatter:axisTime}});
+    syncNavigation();
   }
   function setTheme(theme){
     const dark=theme==='dark';
@@ -162,13 +165,16 @@ export function createResearchChart(container,options={}){
     if(response.markers)marks=response.markers;if(response.groups)groups=response.groups;
     if(rows.length){
       if(changed||!oldVisible||response.resetView){
+        if(manual)chart.timeScale().setVisibleLogicalRange(defaultChartRange(rows,timeframe));
+        else{
         let latest=rows.length-1;while(latest>=0&&!rows[latest]._valid)latest--;
         if(latest>=0)chart.timeScale().setVisibleLogicalRange({from:Math.max(-2,latest-179),to:latest+5});
         else{chart.timeScale().applyOptions({rightOffset:0});chart.timeScale().fitContent();}
+        }
       }
       else chart.timeScale().setVisibleRange(oldVisible);
     }
-    renderMarkers();queueBands();
+    renderMarkers();queueBands();syncNavigation();
     requestAnimationFrame(()=>{suppressRange=false;});
   }
   function hover(param){
@@ -191,7 +197,7 @@ export function createResearchChart(container,options={}){
     (options.onBarClick||options.onTimeClick)?.({bar:row,timeUtc:new Date(row._time*1000).toISOString()});
   }
   function rangeChanged(range){
-    queueBands();const nextDense=(chart.timeScale().options().barSpacing||6)<8;if(nextDense!==dense)renderMarkers();
+    queueBands();syncNavigation();const nextDense=(chart.timeScale().options().barSpacing||6)<8;if(nextDense!==dense)renderMarkers();
     if(destroyed||suppressRange||!range||typeof range.from!=='number'||typeof range.to!=='number')return;
     const key=range.from+'|'+range.to;if(key===lastRangeKey)return;lastRangeKey=key;
     (options.onVisibleRangeChange||options.onRangeChange)?.({from:new Date(range.from*1000).toISOString(),to:new Date(range.to*1000).toISOString()});
@@ -202,9 +208,31 @@ export function createResearchChart(container,options={}){
     chart.timeScale().setVisibleLogicalRange({from:Math.max(-2,index-half),to:Math.min(rows.length+5,index+half)});
     if(row._valid)chart.setCrosshairPosition(row.close,row._time,candles);queueBands();return true;
   }
-  function reset(){chart.timeScale().applyOptions({rightOffset:0});chart.timeScale().fitContent();chart.priceScale('right').applyOptions({autoScale:true});queueBands();}
+  function reset(){if(manual&&rows.length)chart.timeScale().setVisibleLogicalRange({from:-.5,to:rows.length-.5});else{chart.timeScale().applyOptions({rightOffset:0});chart.timeScale().fitContent();}chart.priceScale('right').applyOptions({autoScale:true});queueBands();syncNavigation();}
+  function syncNavigation(){
+    if(!controls)return;
+    const range=chart.timeScale().getVisibleLogicalRange();
+    const width=range?range.to-range.from:0,total=rows.length;
+    if(controls.zoomIn)controls.zoomIn.disabled=!range||width<=Math.min(12,total);
+    if(controls.zoomOut)controls.zoomOut.disabled=!range||width>=total-.1;
+    if(controls.fit)controls.fit.disabled=!total;
+    if(controls.reset)controls.reset.disabled=!total;
+    if(controls.position){const maximum=Math.max(0,total-width);controls.position.max=String(Math.ceil(maximum*100));controls.position.value=String(Math.max(0,(range?.from??-.5)+.5)*100);controls.position.disabled=!range||maximum<1;}
+    const firstIndex=range?Math.max(0,Math.min(total-1,Math.ceil(range.from+1e-6))):0,lastIndex=range?Math.max(0,Math.min(total-1,Math.floor(range.to-1e-6))):0;
+    const first=range?rows[firstIndex]:null,last=range?rows[lastIndex]:null;
+    if(controls.label)controls.label.textContent=first&&last?`${fullTime(first._time)} — ${fullTime(last._time)} · ${lastIndex-firstIndex+1} 根K线`:'暂无可显示行情';
+  }
+  function zoom(factor){const next=zoomChartRange(chart.timeScale().getVisibleLogicalRange(),rows.length,factor);if(next){chart.timeScale().setVisibleLogicalRange(next);syncNavigation();}}
+  const listeners=[];
+  function bind(element,event,fn){if(element){element.addEventListener(event,fn);listeners.push(()=>element.removeEventListener(event,fn));}}
+  if(controls){
+    bind(controls.zoomIn,'click',()=>zoom(.65));bind(controls.zoomOut,'click',()=>zoom(1/.65));bind(controls.fit,'click',reset);
+    bind(controls.reset,'click',()=>{const range=defaultChartRange(rows,timeframe);if(range)chart.timeScale().setVisibleLogicalRange(range);});
+    bind(controls.position,'input',()=>{const old=chart.timeScale().getVisibleLogicalRange();if(!old)return;const from=Number(controls.position.value)/100-.5,next=boundedChartRange({from,to:from+old.to-old.from},rows.length);if(next)chart.timeScale().setVisibleLogicalRange(next);});
+    chart.timeScale().subscribeVisibleLogicalRangeChange(syncNavigation);
+  }
   const observer=new ResizeObserver(()=>{if(destroyed)return;chart.resize(Math.max(200,container.clientWidth),Math.max(240,container.clientHeight||480));queueBands();});observer.observe(container);
   chart.subscribeCrosshairMove(hover);chart.subscribeClick(click);chart.timeScale().subscribeVisibleTimeRangeChange(rangeChanged);
   setTimezone(timeZone);setTheme(document.documentElement.dataset.theme||'light');
-  return {setData,setMarkers,setTimezone,setTheme,focus:focusTime,focusTime,reset,highlight(id){selectedId=id;renderMarkers();},destroy(){if(destroyed)return;destroyed=true;cancelAnimationFrame(frame);observer.disconnect();chart.unsubscribeCrosshairMove(hover);chart.unsubscribeClick(click);chart.timeScale().unsubscribeVisibleTimeRangeChange(rangeChanged);markerPlugin.detach();chart.remove();host.remove();bands.remove();}};
+  return {setData,setMarkers,setTimezone,setTheme,focus:focusTime,focusTime,reset,zoomIn:()=>zoom(.65),zoomOut:()=>zoom(1/.65),highlight(id){selectedId=id;renderMarkers();},destroy(){if(destroyed)return;destroyed=true;cancelAnimationFrame(frame);listeners.forEach(fn=>fn());if(controls)chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncNavigation);observer.disconnect();chart.unsubscribeCrosshairMove(hover);chart.unsubscribeClick(click);chart.timeScale().unsubscribeVisibleTimeRangeChange(rangeChanged);markerPlugin.detach();chart.remove();host.remove();bands.remove();}};
 }
