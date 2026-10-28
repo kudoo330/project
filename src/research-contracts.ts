@@ -1,5 +1,5 @@
-/** Future-only contracts. No strategy execution, broker or live subscription is
- * implemented or enabled by declaring these interfaces. */
+/** Shared contracts. AMD hypothetical execution is implemented separately in
+ * amd-backtest.ts; declaring interfaces never enables broker/live operations. */
 export type ResearchTimeframe = '1m' | '5m' | '15m' | '30m' | '60m' | '1d';
 export interface StrategyManifest {
   strategyId: string;
@@ -9,6 +9,7 @@ export interface StrategyManifest {
   timeframes: ResearchTimeframe[];
   parameterSchema: Record<string, unknown>;
   description?: string;
+  researchOnly?: boolean;
 }
 export interface ResearchSignal {
   readonly id: string;

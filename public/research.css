@@ -5,3 +5,23 @@
 
 /* Keep the previous canvas size clipped during ResizeObserver updates. */
 #research-chart{overflow:hidden}.research-footnote{overflow-wrap:anywhere}
+
+/* Hypothesis lab stays separate from manually reported trades. */
+.amd-backtest-panel { margin-top:24px; }
+.bt-choices { display:flex;gap:14px;flex-wrap:wrap;align-items:center;border:1px solid var(--line);border-radius:8px;margin:16px 0;padding:12px; }
+.bt-choices label { display:flex;flex-direction:row;gap:6px;align-items:center;font-size:13px; }
+.bt-choices input[type=checkbox] { width:16px;height:16px;min-height:16px;flex:0 0 16px; }
+.bt-parameters { margin:16px 0; }
+.bt-parameters textarea { width:100%;box-sizing:border-box;font-family:monospace;line-height:1.5; }
+.bt-history { flex-wrap:wrap;margin:20px 0; }
+.bt-history label { flex:1;min-width:180px; }
+.amd-backtest-panel pre { white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;font-size:12px; }
+.bt-equity-chart { height:260px;min-width:0; }
+.bt-price-chart { height:420px;position:relative;min-width:0; }
+.bt-trades-scroll { max-height:500px;overflow:auto; }
+#bt-summary td,#bt-trades td { white-space:nowrap; }
+#bt-summary td:first-child { font-weight:700; }
+@media(max-width:600px){.bt-price-chart{height:320px}.bt-choices{gap:10px}.bt-history{align-items:stretch}.bt-history label{width:100%}}
+
+.amd-backtest-panel .research-controls { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+@media(max-width:600px){.amd-backtest-panel .research-controls{grid-template-columns:1fr}}
