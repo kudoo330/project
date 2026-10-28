@@ -19,10 +19,10 @@ test('unauthenticated pages and APIs cannot expose records',async({request})=>{
   const page=await request.get('/app.html',{maxRedirects:0});expect(page.status()).toBe(302);
   expect((await request.get('/app',{maxRedirects:0})).status()).toBe(302);
 });
-test('viewer may read but cannot create, edit, delete or refresh',async()=>{
+test('viewer cannot read private records or create, edit, delete or refresh',async()=>{
   const c=await makeRequest.newContext({baseURL:origin,extraHTTPHeaders:headers});
   const response=await c.post('/api/login',{data:{username:'viewer',password:'local-test-viewer-only'}});expect(response.ok()).toBeTruthy();
-  expect((await c.get('/api/records')).status()).toBe(200);
+  expect((await c.get('/api/records')).status()).toBe(403);
   for(const [path,method]of [['/api/import-closes','POST'],['/api/import-reviewed','POST'],['/api/records','POST'],['/api/records/nonexistent','PATCH'],['/api/records/nonexistent','DELETE'],['/api/refresh','POST'],['/api/strategies/twenty-minute/analysis-rule','PATCH']])expect((await c.fetch(path,{method,data:{}})).status()).toBe(403);
   await c.post('/api/logout',{data:{}});expect((await c.get('/api/records')).status()).toBe(401);await c.dispose();
 });
@@ -59,9 +59,10 @@ test('desktop login, empty state, form and theme',async({page})=>{
   await page.getByRole('button',{name:'买入追踪',exact:false}).click();
   await page.screenshot({path:'/workspace/scratch/tracker-desktop.png',fullPage:true});expect(errors).toEqual([]);
 });
-test('mobile viewer has readable navigation and no edit controls',async({page})=>{
+test('mobile viewer has readable comparison navigation and no private tracking controls',async({page})=>{
   await page.setViewportSize({width:390,height:844});await page.goto('/');await page.getByLabel('用户名').fill('viewer');await page.getByLabel('密码',{exact:true}).fill('local-test-viewer-only');await page.getByRole('button',{name:'登录研究室'}).click();
-  await expect(page).toHaveURL(/\/app(?:\.html)?$/);await expect(page.getByText('从第一条记录开始')).toBeVisible();await expect(page.locator('#add')).toBeHidden();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/tracker-mobile.png',fullPage:true});
+  await expect(page).toHaveURL(/\/comparison(?:\.html)?$/);await expect(page.getByRole('heading',{name:'股价对比'})).toBeVisible();await expect(page.locator('#add')).toHaveCount(0);await expect(page.locator('#admin-home')).toBeHidden();await expect(page.locator('#admin-research')).toBeHidden();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/tracker-mobile.png',fullPage:true});
+  await page.getByRole('button',{name:'退出登录'}).click();await expect(page).toHaveURL(origin+'/');expect((await page.request.get('/api/records')).status()).toBe(401);
 });
 test('single-entry UI creates independent strategy samples; CSV preview rejects bad rows',async({page})=>{
   await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
@@ -190,7 +191,7 @@ test('only empty strategies can be deleted; analysis rules clean up and records 
 test('tracking sort dropdowns order buy times and D0 through D10; missing returns stay last',async({page})=>{
  const rows=[['300111.SZ','09:32:00',0],['300112.SZ','09:30:00',null],['300113.SZ','09:33:00',12],['300114.SZ','09:31:00',-2]].map(([symbol,time,value],i)=>({id:'sort-'+i,symbol,name:'SORT FIXTURE',strategy_id:'twenty-minute',strategy_name:'TEST',buy_time:'2026-10-16T'+time,created_at:'2026-10-16T01:00:00Z',tags:'',notes:'',version:'',batch_id:'test',tracking:{base:10,baseType:'TEST',progress:0,status:'追踪中',max:null,min:null,window:Array.from({length:11},(_,n)=>({n,date:'2026-10-16',value,state:'TEST'}))}}));
  await page.route('**/api/records',route=>route.request().method()==='GET'?route.fulfill({json:{records:rows}}):route.continue());
- await page.goto('/');await page.getByLabel('用户名').fill('viewer');await page.getByLabel('密码',{exact:true}).fill('local-test-viewer-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+ await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
  const codes=()=>page.locator('#records-table tbody tr td:nth-child(2) button').allTextContents();
  await expect(page.locator('#record-sort-field option')).toHaveCount(12);
  await page.locator('#record-sort-direction').selectOption('asc');await expect.poll(codes).toEqual(['300112.SZ','300114.SZ','300111.SZ','300113.SZ']);
@@ -203,7 +204,7 @@ test('pending-price card counts price gaps only, ignoring refresh errors, calend
  const record=(id,base,close)=>({id,symbol:'300111.SZ',name:'FIXTURE',strategy_id:'twenty-minute',strategy_name:'TEST',buy_time:day+'T09:40:00',created_at:day+'T01:00:00Z',tags:'',notes:'',version:'',batch_id:'test',reference_price:base,error:'Test refresh failure',tracking:{base,progress:0,status:'日历待核实',baseType:'TEST',max:null,min:null,window:[{date:day,n:0,rawClose:close,close,value:close===null?null:0,state:'TEST'},...Array.from({length:10},(_,n)=>({date:future,n:n+1,close:null,value:null,state:'待更新'}))]}});
  const records=[record('complete-with-error',10,10),record('missing-base',null,10),record('missing-close',10,null)];
  await page.route('**/api/records',route=>route.fulfill({json:{records}}));
- await page.goto('/');await page.getByLabel('用户名').fill('viewer');await page.getByLabel('密码',{exact:true}).fill('local-test-viewer-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
+ await page.goto('/');await page.getByLabel('用户名').fill('admin');await page.getByLabel('密码',{exact:true}).fill('local-test-admin-only');await page.getByRole('button',{name:'登录研究室'}).click();await expect(page).toHaveURL(/\/app(?:\.html)?$/);
  const card=page.locator('#stats .stat').filter({has:page.locator('span',{hasText:/^待补价$/})});await expect(card.locator('strong')).toHaveText('2');
  await page.locator('#filter-search').fill('FIXTURE');await expect(card.locator('strong')).toHaveText('2');
 });

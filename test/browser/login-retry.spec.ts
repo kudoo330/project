@@ -14,8 +14,10 @@ test('old lockouts and repeated failures never block valid login, while authenti
   const c=await request.newContext({baseURL:origin,extraHTTPHeaders:{Origin:origin,'CF-Connecting-IP':ip}});
   try{
     const db=await mf.getD1Database('DB');
-    const schema=await readFile(new URL('../../migrations/0001_initial.sql',import.meta.url),'utf8');
-    await db.batch(schema.split(';').map(sql=>sql.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
+    for(const name of ['0001_initial.sql','0007_research_users.sql']){
+      const schema=await readFile(new URL('../../migrations/'+name,import.meta.url),'utf8');
+      await db.batch(schema.replace(/--[^\n]*/g,'').split(';').map(sql=>sql.trim()).filter(Boolean).map(sql=>db.prepare(sql)));
+    }
     for(const value of [ip,'127.0.0.1','local'])await db.prepare('INSERT INTO login_limits(key,attempts,expires_at) VALUES(?,99,?)').bind(createHash('sha256').update(value).digest('hex'),Date.now()+900000).run();
     const valid={username:'admin',password:'local-test-admin-only'};
     expect((await c.post('/api/login',{data:valid})).status()).toBe(200);

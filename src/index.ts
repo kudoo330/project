@@ -15,6 +15,9 @@ import {minuteCloseSource} from './reference-source';
 import {importVerifiedCloses} from './verified-close-import';
 import {canReadWithToken,generateReadToken,revokeReadToken} from './read-access';
 import {researchDataApi} from './research-data';
+import {researchChartApi} from './research-chart';
+import {researchMarkersApi} from './research-markers';
+import {userManagementApi} from './user-management';
 const json=(data:unknown,status=200)=>Response.json(data,{status});
 const now=()=>new Date().toISOString();
 const text=(s:unknown,max=2000)=>String(s??'').slice(0,max);
@@ -51,12 +54,19 @@ async function api(request:Request,env:Env,url:URL) {
   const user=await identity(request,env);
   if(!user)return json({error:'请先登录'},401);
   if(url.pathname==='/api/me')return json(user);
+  if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
+  if(url.pathname==='/api/account/password')return userManagementApi(request,env,url,user);
+  // Ordinary users receive only the comparison quotes they need. Private A-share
+  // records, summaries, exports and all research endpoints are denied server-side.
+  if(user.role!=='admin'&&!(url.pathname==='/api/quote'&&request.method==='GET'))return json({error:'此账号仅可访问股价对比'},403);
+  if(url.pathname==='/api/users'||url.pathname.startsWith('/api/users/'))return userManagementApi(request,env,url,user);
+  if(url.pathname==='/api/research/chart')return researchChartApi(request,env,url);
+  if(url.pathname==='/api/research'||url.pathname.startsWith('/api/research/'))return researchMarkersApi(request,env,url,user.username);
   if(url.pathname==='/api/research-data'||url.pathname.startsWith('/api/research-data/')){
     if(user.role!=='admin')return json({error:'仅管理员可访问研究行情数据'},403);
     return researchDataApi(request,env,url,user.username);
   }
   if(url.pathname==='/api/close-sync'&&request.method==='GET')return json(await closeSyncStatus(env));
-  if(url.pathname==='/api/logout'&&request.method==='POST')return logout(request,env);
   if(mutating&&user.role!=='admin')return json({error:'此账号只有查看权限'},403);
   if(url.pathname==='/api/confirm-dividend'&&request.method==='POST'){
     const result=await confirmDividend(env.DB,await body(request),user.username);
@@ -227,12 +237,16 @@ async function handle(request:Request,env:Env) {
   const url=new URL(request.url);
   if(url.pathname.startsWith('/api/'))return api(request,env,url);
   if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});
-  if(/^\/market-data(?:\.html)?\/?$/.test(url.pathname)){
+  if(/^\/(?:market-data|research|users)(?:\.html)?\/?$/.test(url.pathname)){
     const user=await identity(request,env);
     if(!user)return Response.redirect(url.origin+'/',302);
     if(user.role!=='admin')return new Response('仅管理员可访问研究行情数据',{status:403,headers:{'Content-Type':'text/plain; charset=utf-8'}});
   }
-  if(/^\/app(?:\.html)?\/?$/.test(url.pathname)&&!await identity(request,env))return Response.redirect(url.origin+'/',302);
+  if(/^\/(?:app|comparison)(?:\.html)?\/?$/.test(url.pathname)){
+    const user=await identity(request,env);
+    if(!user)return Response.redirect(url.origin+'/',302);
+    if(/^\/app(?:\.html)?\/?$/.test(url.pathname)&&user.role!=='admin')return Response.redirect(url.origin+'/comparison',302);
+  }
   return env.ASSETS.fetch(request);
 }
 export default {
@@ -251,7 +265,10 @@ export default {
     result.headers.set('X-Content-Type-Options','nosniff');
     result.headers.set('Referrer-Policy','no-referrer');
     result.headers.set('X-Frame-Options','DENY');
-    result.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    // Pinned Lightweight Charts 5.0.9 inserts one immutable attribution-logo
+    // stylesheet. Permit only that exact text on its page, never arbitrary CSS.
+    const chartStyle=/^\/research(?:\.html)?\/?$/.test(new URL(request.url).pathname)?" 'sha256-3pRED1tOXas1FXFoPb9TGCjmYe9XQsmO9OV23khV2nY='":'';
+    result.headers.set('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self'${chartStyle}; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     if(new URL(request.url).protocol==='https:')result.headers.set('Strict-Transport-Security','max-age=31536000');
     return result;
   }

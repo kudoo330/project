@@ -1,0 +1,4 @@
+export const $=s=>document.querySelector(s);
+export const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+export async function api(path,options={}){const r=await fetch(path,{...options,headers:{'Content-Type':'application/json',...options.headers}});const d=await r.json();if(r.status===401&&path!=='/api/account/password'){location.replace('/');throw new Error('登录已过期');}if(!r.ok)throw new Error(d.error||'请求失败');return d;}
+export function setupTheme(){try{document.documentElement.dataset.theme=localStorage.getItem('theme')||'light';}catch{}$('#theme')?.addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;try{localStorage.setItem('theme',theme);}catch{}});$('#logout')?.addEventListener('click',async()=>{await api('/api/logout',{method:'POST',body:'{}'});location.replace('/');});}

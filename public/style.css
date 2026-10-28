@@ -8,3 +8,5 @@
 #records-table .observation-cell{font-weight:700}
 
 #records-table tbody td{font-size:14px}#records-table tbody td button{font-size:14px}#records-table tbody .pill{font-size:13px}
+
+.research-entry{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:20px}.research-entry strong,.research-entry span{display:block}.research-entry span{color:var(--muted);font-size:13px;margin-top:5px}.sidebar a.nav-item{text-decoration:none}.simple-main{max-width:1300px;margin:auto;padding:24px}.simple-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:30px}.simple-header nav{display:flex;gap:10px;align-items:center}.account-form{max-width:600px}.account-form label{display:block;margin:12px 0}.account-form input,.account-form select{width:100%}@media(max-width:600px){.research-entry{align-items:flex-start;flex-direction:column}.simple-main{padding:16px}.simple-header nav{flex-wrap:wrap}}

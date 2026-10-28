@@ -1,0 +1,64 @@
+import {test,expect,type Page,type APIRequestContext} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
+const headers={Origin:'http://127.0.0.1:8787'};
+const day='2026-10-27';
+const stamp=()=>crypto.randomUUID().slice(0,12);
+async function login(page:Page,role='admin'){expect((await page.request.post('/api/login',{headers,data:{username:role,password:`local-test-${role==='admin'?'admin':'viewer'}-only`}})).ok()).toBeTruthy();}
+async function source(request:APIRequestContext,symbol='AMD.US',period='1m'){
+  const provider='LOCAL-RESEARCH-TEST-'+stamp(),dataset={symbol,period,provider,adjustment:'none',adjustment_as_of:null,time_zone:'America/New_York',currency:'USD'};
+  const rows=period==='1m'?[
+    {time:day+'T09:30:00-04:00',open:10,high:12,low:9,close:11,volume:100,status:'available'},
+    {time:day+'T09:31:00-04:00',open:11,high:13,low:10,close:12,volume:120,status:'available'},
+    {time:day+'T09:32:00-04:00',status:'missing',reason:'Synthetic missing minute fixture.'},
+    {time:day+'T09:33:00-04:00',open:12,high:14,low:11,close:13,volume:130,status:'available'},
+  ]:[{time:day,open:10,high:14,low:9,close:13,volume:350,status:'available'}];
+  const payload={dataset,source_note:'Synthetic browser research fixture. Not real market quotes.',rows},previewResponse=await request.post('/api/research-data/preview',{headers,data:payload});expect(previewResponse.ok()).toBeTruthy();const preview=await previewResponse.json();expect(preview.valid).toBeTruthy();
+  const imported=await request.post('/api/research-data/import',{headers,data:{...payload,preview_token:preview.preview_token,expected_revision:preview.revision,request_id:crypto.randomUUID()}});expect(imported.ok()).toBeTruthy();return {id:(await imported.json()).dataset_id,provider};
+}
+async function createGroup(request:APIRequestContext){const current=await(await request.get('/api/research/groups')).json(),name='LOCAL-RESEARCH-'+stamp(),result=await request.post('/api/research/groups',{headers,data:{name,color:'#257f77',expected_revision:current.revision,request_id:crypto.randomUUID()}});expect(result.ok()).toBeTruthy();return (await result.json()).group;}
+async function prepare(page:Page){await login(page);const quotes=await source(page.request);await page.goto('/research.html');await expect(page.locator('#research-content')).toBeVisible();await page.locator('#research-dataset').selectOption(quotes.id);await page.locator('#research-start').fill(day);await page.locator('#research-end').fill(day);await page.locator('#research-load').click();await expect(page.locator('#research-source')).toContainText(quotes.provider);await expect(page.locator('#research-chart-status')).toContainText('当前窗口');return quotes;}
+async function addMarker(page:Page,groupId:string,action:string,time:string,price?:string){await page.locator('#marker-add').click();await page.locator('#edit-group').selectOption(groupId);await page.locator('#edit-action').selectOption(action);await page.locator('#edit-time').fill(day+'T'+time+'-04:00');if(price)await page.locator('#edit-price').fill(price);await page.locator('#edit-source-note').fill('Synthetic browser annotation, not an actual trade.');await page.locator('#marker-save').click();await expect(page.locator('#marker-dialog')).not.toBeVisible();}
+
+test('research workspace and private APIs reject unauthenticated and viewer access',async({page,request})=>{
+  expect((await request.get('/research.html',{maxRedirects:0})).status()).toBe(302);
+  expect((await request.get('/api/research/groups')).status()).toBe(401);
+  await login(page,'viewer');for(const path of ['/research.html','/api/research/groups','/api/research/markers','/api/research/chart?dataset_id=none','/api/research/markers/export'])expect((await page.request.get(path)).status()).toBe(403);
+  expect((await page.request.post('/api/research/groups',{headers,data:{name:'forbidden'}})).status()).toBe(403);
+});
+
+test('actual stored OHLCV renders with sessions, aggregation, daily source, timezones and responsive chart',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));const quotes=await prepare(page);await expect(page.locator('#research-chart-empty')).not.toBeVisible();expect(await page.locator('#research-chart canvas').count()).toBeGreaterThan(0);
+  await page.locator('#research-quality-summary').click();await expect(page.locator('#research-gaps-table')).toContainText('Synthetic missing minute fixture.');await page.locator('#research-quality-summary').click();
+  await page.locator('[data-timeframe="5m"]').click();await expect(page.locator('[data-timeframe="5m"]')).toHaveAttribute('aria-pressed','true');await page.locator('#research-dataset').selectOption(quotes.id);await expect(page.locator('#research-chart-status')).toContainText('当前窗口');
+  await page.locator('#research-quality-summary').click();await expect(page.locator('#research-gaps-table')).toContainText('不完整');await page.locator('#research-quality-summary').click();
+  await page.locator('[data-timeframe="1m"]').click();await page.locator('#research-timezone').selectOption('Asia/Shanghai');await expect(page.locator('#research-zone-label')).toContainText('北京时间');await page.locator('#research-goto').fill(day+'T21:30');await page.locator('#research-goto-form button').click();await expect(page.locator('#research-chart-status')).toContainText('已定位');
+  await page.locator('#research-timezone').selectOption('America/New_York');await page.locator('#research-goto').fill(day+'T09:30');await page.locator('#research-goto-form button').click();
+  const chart=page.locator('#research-chart');await chart.click({position:{x:Math.min(250,(await chart.boundingBox())!.width/2),y:130}});if(await page.locator('#marker-dialog').isVisible()){await expect(page.locator('#edit-price')).toHaveValue('');await page.locator('[data-close="marker-dialog"]').first().click();}
+  if(await page.locator('#group-dialog').isVisible())await page.locator('[data-close="group-dialog"]').click();
+  const daily=await source(page.request,'AMD.US','1d');await page.reload();await page.locator('[data-timeframe="1d"]').click();await page.locator('#research-dataset').selectOption(daily.id);await page.locator('#research-start').fill(day);await page.locator('#research-end').fill(day);await page.locator('#research-load').click();await expect(page.locator('#research-source')).toContainText('独立日线');
+  await page.locator('#research-theme').click();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'/workspace/scratch/research-mobile.png',fullPage:true});await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');expect(errors).toEqual([]);
+});
+
+test('groups and BUY SELL REBUY annotations persist, pair, link, edit, delete and undo',async({page})=>{
+  const quotes=await prepare(page);await page.locator('#research-manage-groups').click();const name='UI-RESEARCH-'+stamp();await page.locator('#group-name').fill(name);await page.locator('#group-save').click();await expect(page.locator('#group-error')).toContainText('分组已创建');const groups=await(await page.request.get('/api/research/groups')).json(),group=groups.groups.find((g:any)=>g.name===name);await page.locator('[data-close="group-dialog"]').click();
+  await page.locator('#marker-filter-group').selectOption(group.id);await page.locator('#marker-filters button').click();await addMarker(page,group.id,'BUY','09:30:00');await expect(page.locator('#marker-table tbody tr')).toHaveCount(1);await expect(page.locator('#marker-table tbody tr').first().locator('td').nth(3)).toContainText('—');
+  await page.locator('#marker-table tbody tr').first().getByRole('button',{name:'编辑',exact:true}).click();await page.locator('#edit-price').fill('10');await page.locator('#edit-notes').fill('<img src=x onerror=alert(1)> research note');await page.locator('#marker-save').click();await expect(page.locator('#marker-dialog')).not.toBeVisible();expect(await page.locator('#marker-table img').count()).toBe(0);
+  await addMarker(page,group.id,'SELL','09:31:00','12');await addMarker(page,group.id,'REBUY','09:33:00','11');await expect(page.locator('#marker-table tbody tr')).toHaveCount(3);
+  const sell=page.locator('#marker-table tbody tr').filter({has:page.locator('.research-action.SELL')});await sell.getByRole('button',{name:'配对',exact:true}).click();await page.locator('#pair-save').click();await expect(page.locator('#pair-dialog')).not.toBeVisible();await expect(page.locator('#research-pair-count')).toHaveText('1');await page.locator('.research-pairs summary').click();await expect(page.locator('#research-pairs-list')).toContainText('+1 USD');
+  const buy=page.locator('#marker-table tbody tr').filter({has:page.locator('.research-action.BUY')});await buy.getByRole('button',{name:'定位',exact:true}).click();await expect(buy).toHaveClass(/selected/);await buy.getByRole('button',{name:'详情',exact:true}).click();await expect(page.locator('#marker-detail-content')).toContainText('人工研究假设');await page.locator('[data-close="marker-detail"]').click();
+  await buy.getByRole('button',{name:'删除',exact:true}).click();await page.locator('#marker-delete-confirm').click();await expect(page.locator('#marker-table tbody tr')).toHaveCount(2);await page.locator('#marker-undo-button').click();await expect(page.locator('#marker-table tbody tr')).toHaveCount(3);
+  await page.reload();await page.locator('#research-dataset').selectOption(quotes.id);await page.locator('#research-start').fill(day);await page.locator('#research-end').fill(day);await page.locator('#marker-filter-group').selectOption(group.id);await page.locator('#marker-filters button').click();await expect(page.locator('#marker-table tbody tr')).toHaveCount(3);await expect(page.locator('#research-pair-count')).toHaveText('1');
+  await page.locator('#research-hide-all').click();expect(await page.locator('#research-groups input:checked').count()).toBe(0);await page.locator('#research-show-all').click();expect(await page.locator('#research-groups input:checked').count()).toBeGreaterThan(0);
+  await page.locator('#marker-sort').selectOption('price_desc');await expect(page.locator('#marker-table tbody tr').first().locator('td').nth(3)).toContainText('12');
+  await page.locator('#marker-table tbody tr').first().getByRole('button',{name:'编辑',exact:true}).click();await createGroup(page.request);await page.locator('#marker-save').click();await expect(page.locator('#edit-error')).toContainText('重新打开最新标注');await expect(page.locator('#marker-save')).toBeDisabled();await page.locator('[data-close="marker-dialog"]').first().click();
+  await page.setViewportSize({width:1440,height:1100});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'/workspace/scratch/research-desktop.png',fullPage:true});
+});
+
+test('marker CSV preview is read only, quoted notes survive, export reimports and stale preview blocks',async({page})=>{
+  await login(page);const group=await createGroup(page.request);await prepare(page);await page.locator('#marker-filter-group').selectOption(group.id);await page.locator('#marker-filters button').click();await page.locator('#marker-import-open').click();
+  const csv='group_id,symbol,action,time,price,source_type,status,notes,source_note\r\n'+group.id+',AMD.US,BUY,'+day+'T09:30:00-04:00,,manual_hypothesis,candidate,"Synthetic ""quote""\nnote",Synthetic browser fixture';
+  await page.locator('#marker-import-text').fill(csv);await page.locator('#marker-import-preview').click();await expect(page.locator('#marker-import-status')).toContainText('新增 1');const before=await(await page.request.get('/api/research/markers?group_id='+group.id)).json();expect(before.markers).toHaveLength(0);
+  await page.locator('#marker-import-submit').click();await expect(page.locator('#marker-import-status')).toContainText('标注已保存');await page.locator('[data-close="marker-import"]').click();await expect(page.locator('#marker-table tbody tr')).toHaveCount(1);await expect(page.locator('#marker-table')).toContainText('Synthetic "quote"');
+  const downloaded=page.waitForEvent('download');await page.locator('#marker-export').click();const file=await downloaded,contents=await readFile((await file.path())!,'utf8');expect(contents).toContain('manual_hypothesis');await page.locator('#marker-import-open').click();await page.locator('#marker-import-text').fill(contents);await page.locator('#marker-import-preview').click();await expect(page.locator('#marker-import-status')).toContainText('相同 1');
+  await createGroup(page.request);await page.locator('#marker-import-submit').click();await expect(page.locator('#marker-import-status')).toContainText('重新预览');await expect(page.locator('#marker-import-result')).toBeHidden();
+});

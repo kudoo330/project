@@ -4,7 +4,7 @@ A股策略样本记录与10交易日观察网站。Cloudflare Worker + D1 + 原�
 
 **A 股版本已在 Cloudflare 上线，仍有未交付功能。** 已实现用户名密码登录、管理员 / 查看者权限、持久化策略样本、单笔和批量录入、CSV预览及字段映射、导出、日线刷新、详情、MA与成交量比较、策略等权统计、基础多股票日线研究、手机布局及主题。完整任务书仍有未交付项，见 `docs/ACCEPTANCE.md`。
 
-新增 [AMD / AMDL 历史行情手动导入](docs/MANUAL-MARKET-DATA.md)：管理员预览、补齐缺口并保留修订依据，数据与原 A 股记录独立。是否已生产发布以最新验收记录为准；此入口不代表完整 v3.0 已完成。候选行情来源见 [AllTick 文档评估](docs/ALLTICK-REVIEW.md)。
+新增 [AMD / AMDL K线研究](docs/AMD-RESEARCH.md)：独立管理员图表、1m/5m/15m/30m/60m/日线、手工买卖标记、研究分组和明细导入导出。行情通过[手动导入](docs/MANUAL-MARKET-DATA.md)保存并显示缺口；不声称全历史数据或正式自动回测已接通。普通用户只能访问股价对比，原A股记录和AMD研究API均由服务端隔离。`/users`可开通指定账户，部署不创建虚构账户。是否已生产发布以最新验收记录为准。候选源见[AllTick评估](docs/ALLTICK-REVIEW.md)。
 
 ## 本地开发
 
@@ -20,11 +20,13 @@ npm run db:local
 npm run dev
 ```
 
-没有管理员哈希时网站保持锁定，绝无默认生产密码。`.dev.vars` 仅用于本地；禁止提交。网站账号与 Cloudflare 账号完全独立。所有被授权账号看到同一个研究数据集；只有管理员能修改。
+没有管理员哈希时网站保持锁定，绝无默认生产密码。`.dev.vars` 仅用于本地；禁止提交。网站账号与 Cloudflare 账号完全独立。管理员共享研究数据集；普通用户只访问股价对比，不能读取个人买入记录、研究标记、研究行情或导出。可以继续使用环境配置的查看者，或从管理员用户管理页面开通指定账号。
 
 环境限制写入用户目录时，可设置 `XDG_CONFIG_HOME=/workspace/scratch/wrangler-config`。云任务已经隔离，沿用现有检出，不创建 Git worktree。
 
 ## 验证
+
+下面早期测试数字和阻碍是初版历史记录；当前结果以 [验收记录](docs/ACCEPTANCE.md) 和实际工具输出为准。已部署站点为 https://project.kudoo330.workers.dev ，GitHub `master` 触发原Cloudflare项目构建。
 
 ```sh
 npm test
